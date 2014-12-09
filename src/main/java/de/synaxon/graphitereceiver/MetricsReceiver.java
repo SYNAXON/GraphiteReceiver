@@ -108,9 +108,10 @@ public class MetricsReceiver implements StatsListReceiver,
             SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
             String node;
             node = String.format(
-                    "monitoring.nagios.%s.%s",
+                    "monitoring.nagios.%s.%s_%s",
                     metricSet.getEntityName().replace("[vCenter]", "").replace("[VirtualMachine]", "").replace("[HostSystem]", "").replace('.', '_').replace('-', '_'),
-                    metricSet.getCounterName()
+                    metricSet.getCounterName(),
+                    metricSet.getStatType()
             );
             try {
                 Iterator<PerfMetric> metrics = metricSet.getMetrics();
