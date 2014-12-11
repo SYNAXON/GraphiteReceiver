@@ -14,7 +14,7 @@ A detailed config can be found in the directory sample.
         <!--  Set the file name. Files will be rolled over on the hour -->
         <property>
             <name>host</name>
-            <value>metrics.zentrale.de</value>
+            <value>graphite server</value>
         </property>
         <property>
             <name>port</name>
