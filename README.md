@@ -1,6 +1,6 @@
 GraphiteReceiver
 ================
-A vmware statsfeeder receiver to export the directly into graphite.
+A vmware statsfeeder receiver to export the directly into Graphite or InfluxDB.
 
 Sample Config
 -------------
@@ -61,3 +61,5 @@ StatsFeeder.bat -h vcenter -u user -p password -c config/sampleConfig.xml
 Links
 -----
 https://labs.vmware.com/flings/statsfeeder
+
+http://influxdb.com/docs/v0.6/api/reading_and_writing_data.html#writing-data-through-graphite-protocol
