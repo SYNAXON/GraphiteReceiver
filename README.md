@@ -26,23 +26,29 @@ A detailed config can be found in the directory sample.
 
 Build JAR (on Linux)
 --------------------
- # Make sure you have JDK installed and not just JRE.  Maybe with apt-get install openjdk-7-jdk
- wget http://download3.vmware.com/software/vmw-tools/statsfeeder/StatsFeeder-4.1.697.zip
- mkdir statsfeeder
- cd statsfeeder
- unzip ../StatsFeeder-4.1.697.zip
- cd ..
- git clone https://github.com/SYNAXON/GraphiteReceiver.git
- cd GraphiteReceiver
- mkdir -p ~/.m2/repository/com/vmware/tools/statsfeeder-common/4.1
- mkdir -p ~/.m2/repository/com/vmware/tools/statsfeeder-core/4.1
- cp ../statsfeeder/lib/statsfeeder-common-4.1.jar ~/.m2/repository/com/vmware/tools/statsfeeder-common/4.1
- cp ../statsfeeder/lib/statsfeeder-core-4.1.jar ~/.m2/repository/com/vmware/tools/statsfeeder-core/4.1
- # Install Maven :)  Maybe with apt-get install maven
- mvn package
- cp target/GraphiteReceiver-1.0-SNAPSHOT.jar ../statsfeeder/lib
- cd ../statsfeeder
- # Run StatsFeeder as you normally would but ../GraphiteReceiver/sampleConfig.xml modified to point at your Graphite (or InfluxDB) server
+* Make sure you have JDK installed and not just JRE.  Maybe with 
+```
+apt-get install openjdk-7-jdk
+wget http://download3.vmware.com/software/vmw-tools/statsfeeder/StatsFeeder-4.1.697.zip
+mkdir statsfeeder
+cd statsfeeder
+unzip ../StatsFeeder-4.1.697.zip
+cd ..
+git clone https://github.com/SYNAXON/GraphiteReceiver.git
+cd GraphiteReceiver
+mkdir -p ~/.m2/repository/com/vmware/tools/statsfeeder-common/4.1
+mkdir -p ~/.m2/repository/com/vmware/tools/statsfeeder-core/4.1
+cp ../statsfeeder/lib/statsfeeder-common-4.1.jar ~/.m2/repository/com/vmware/tools/statsfeeder-common/4.1
+cp ../statsfeeder/lib/statsfeeder-core-4.1.jar ~/.m2/repository/com/vmware/tools/statsfeeder-core/4.1
+```
+* Install Maven :)  Maybe with 
+```
+apt-get install maven
+mvn package
+cp target/GraphiteReceiver-1.0-SNAPSHOT.jar ../statsfeeder/lib
+cd ../statsfeeder
+```
+* Run StatsFeeder as you normally would but ../GraphiteReceiver/sampleConfig.xml modified to point at your Graphite (or InfluxDB) server
 
 Development
 -----------
