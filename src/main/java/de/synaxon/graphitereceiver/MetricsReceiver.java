@@ -109,7 +109,7 @@ public class MetricsReceiver implements StatsListReceiver,
             String node;
             node = String.format(
                     "monitoring.nagios.%s.%s_%s",
-                    metricSet.getEntityName().replace("[vCenter]", "").replace("[VirtualMachine]", "").replace("[HostSystem]", "").replace('.', '_').replace('-', '_'),
+                    metricSet.getEntityName().replace("[vCenter]", "").replace("[VirtualMachine]", "").replace("[HostSystem]", "").replace('.', '_').replace('-', '_').replace(' ', '_'),
                     metricSet.getCounterName(),
                     metricSet.getStatType()
             );
