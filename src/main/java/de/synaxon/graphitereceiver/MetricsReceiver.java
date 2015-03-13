@@ -29,6 +29,7 @@ public class MetricsReceiver implements StatsListReceiver,
     Log logger = LogFactory.getLog(MetricsReceiver.class);
 
     private String name = "SampleStatsReceiver";
+    private String graphite_prefix;
     private ExecutionContext context;
     private PrintStream writer;
     private Socket client;
@@ -90,6 +91,12 @@ public class MetricsReceiver implements StatsListReceiver,
     @Override
     public void setExecutionContext(ExecutionContext context) {
         this.context = context;
+        String prefix=this.props.getProperty("prefix");
+        if(prefix != null && !prefix.isEmpty())
+            this.graphite_prefix=this.props.getProperty("prefix");
+        else
+            this.graphite_prefix="vmware";
+
     }
 
     /**
@@ -108,11 +115,14 @@ public class MetricsReceiver implements StatsListReceiver,
             SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
             String node;
             node = String.format(
-                    "monitoring.nagios.%s.%s_%s",
+                    "%s.%s.%s_%s",
+                    graphite_prefix,
                     metricSet.getEntityName().replace("[vCenter]", "").replace("[VirtualMachine]", "").replace("[HostSystem]", "").replace('.', '_').replace('-', '_').replace(' ', '_'),
                     metricSet.getCounterName(),
                     metricSet.getStatType()
             );
+            logger.debug("ENTITY NAME: "+metricSet.getEntityName()+ "COUNTER NAME:" + metricSet.getCounterName());
+            logger.debug("MOREF :"+metricSet.getMoRef()+ " INSTANCE ID :"+ metricSet.getInstanceId()+"string :"+metricSet.toString());
             try {
                 Iterator<PerfMetric> metrics = metricSet.getMetrics();
                 while (metrics.hasNext()) {

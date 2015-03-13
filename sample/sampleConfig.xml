@@ -50,9 +50,13 @@
                     <name>host</name>
                     <value>metrics.zentrale.de</value>
                 </property>
-				<property>
+		<property>
                     <name>port</name>
                     <value>2003</value>
+                </property>
+		<property>
+                    <name>prefix</name>
+                    <value>esxprefix</value>
                 </property>
             </properties>
         </receiver>
