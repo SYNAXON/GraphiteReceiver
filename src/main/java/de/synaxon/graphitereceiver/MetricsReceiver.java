@@ -29,7 +29,11 @@ public class MetricsReceiver implements StatsListReceiver,
     Log logger = LogFactory.getLog(MetricsReceiver.class);
 
     private String name = "SampleStatsReceiver";
-    private String graphite_prefix;
+    private String graphite_prefix = "vmware";
+    //set to true for backwards compatibility
+    private Boolean use_fqdn = true; 
+    //set to true for backwards compatibility
+    private Boolean use_entity_type_prefix = false;
     private ExecutionContext context;
     private PrintStream writer;
     private Socket client;
@@ -92,11 +96,17 @@ public class MetricsReceiver implements StatsListReceiver,
     public void setExecutionContext(ExecutionContext context) {
         this.context = context;
         String prefix=this.props.getProperty("prefix");
+        String use_fqdn=this.props.getProperty("use_fqdn");
+        String use_entity_type_prefix=this.props.getProperty("use_entity_type_prefix");
+        
         if(prefix != null && !prefix.isEmpty())
-            this.graphite_prefix=this.props.getProperty("prefix");
-        else
-            this.graphite_prefix="vmware";
-
+            this.graphite_prefix=prefix;
+        
+        if(use_fqdn != null && !use_fqdn.isEmpty())
+            this.use_fqdn=Boolean.valueOf(use_fqdn);
+        
+        if(use_entity_type_prefix != null && !use_entity_type_prefix.isEmpty())
+            this.use_entity_type_prefix=Boolean.valueOf(use_entity_type_prefix);
     }
 
     /**
@@ -114,15 +124,60 @@ public class MetricsReceiver implements StatsListReceiver,
                     "yyyy-MM-dd'T'HH:mm:ss'Z'");
             SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
             String node;
-            node = String.format(
-                    "%s.%s.%s_%s",
-                    graphite_prefix,
-                    metricSet.getEntityName().replace("[vCenter]", "").replace("[VirtualMachine]", "").replace("[HostSystem]", "").replace('.', '_').replace('-', '_').replace(' ', '_'),
-                    metricSet.getCounterName(),
-                    metricSet.getStatType()
-            );
-            logger.debug("ENTITY NAME: "+metricSet.getEntityName()+ "COUNTER NAME:" + metricSet.getCounterName());
-            logger.debug("MOREF :"+metricSet.getMoRef()+ " INSTANCE ID :"+ metricSet.getInstanceId()+"string :"+metricSet.toString());
+            
+            String eName=null;
+            String counterName=metricSet.getCounterName();
+            //Get Instance Name
+            String instanceName=metricSet.getInstanceId()
+                                        .replace('.','_')
+                                        .replace('-','_')
+                                        .replace('/','.')
+                                        .replace(' ','_');
+            String statType=metricSet.getStatType();
+            
+            if(use_entity_type_prefix) {
+                if(entityName.contains("[VirtualMachine]")) {
+                    eName="vm."   +entityName.replace("[vCenter]", "").replace("[VirtualMachine]", "").replace('.', '_');
+                }else if (entityName.contains("[HostSystem]")) {
+                    //for ESX only hostname
+                    if(!use_fqdn) {
+                        eName="esx."  +entityName.replace("[vCenter]", "").replace("[HostSystem]", "").split("[.]",2)[0];
+                    }else {
+                        eName="esx."  +entityName.replace("[vCenter]", "").replace("[HostSystem]", "").replace('.', '_');
+                    }
+                }else if (entityName.contains("[Datastore]")) {
+                    eName="dts."  +entityName.replace("[vCenter]", "").replace("[Datastore]", "").replace('.', '_');
+                }else if (entityName.contains("[ResourcePool]")) {
+                    eName="rp."   +entityName.replace("[vCenter]", "").replace("[ResourcePool]", "").replace('.', '_');
+                }
+                
+            } else {
+                eName=entityName.replace("[vCenter]", "")
+                                .replace("[VirtualMachine]", "")
+                                .replace("[HostSystem]", "")
+                                .replace("[Datastore]", "")
+                                .replace("[ResourcePool]", "");
+                if(!use_fqdn && entityName.contains("[HostSystem]")){
+                    eName=eName.split("[.]",2)[0];
+                }
+                eName=eName.replace('.', '_');
+            }
+            eName=eName.replace(' ','_').replace('-','_');
+            
+            if (instanceName.equals("")) {
+                node = String.format("%s.%s.%s_%s",graphite_prefix,eName,counterName,statType);
+                logger.debug("GP :" +graphite_prefix+ " EN: "+eName+" CN :"+ counterName +" ST :"+statType);
+            } else {
+                //Get group name (xxxx) metric name (yyyy) and rollup (zzzz) 
+                // from "xxxx.yyyyyy.xxxxx" on the metricName
+                String groupName=counterName.split("[.]",2)[0];
+                String metricName=counterName.split("[.]",2)[1];               
+                node = String.format("%s.%s.%s.%s.%s_%s",graphite_prefix,eName,groupName,instanceName,metricName,statType);
+                logger.debug("GP :" +graphite_prefix+ " EN: "+eName+" GN :"+ groupName +" IN :"+instanceName+" MN :"+metricName+" ST :"+statType);
+            }
+            
+            //logger.debug("ENTITY NAME : " + entityName  +" ENTITY NAME2: "+metricSet.getEntityName()+ " COUNTER NAME: " + metricSet.getCounterName());
+            //logger.debug("MOREF : "+metricSet.getMoRef()+ " INSTANCE ID :"+ metricSet.getInstanceId()+" string :"+metricSet.toString());
             try {
                 Iterator<PerfMetric> metrics = metricSet.getMetrics();
                 while (metrics.hasNext()) {
