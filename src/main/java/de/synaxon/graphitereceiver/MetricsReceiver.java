@@ -108,6 +108,26 @@ public class MetricsReceiver implements StatsListReceiver,
         if(use_entity_type_prefix != null && !use_entity_type_prefix.isEmpty())
             this.use_entity_type_prefix=Boolean.valueOf(use_entity_type_prefix);
     }
+    
+    private String[] splitCounterName(String counterName) {
+        //should split string in a 3 componet array
+        // [0] = groupName
+        // [1] = metricName
+        // [2] = rollup
+        String[] result=new String[3];
+        String[] tmp=counterName.split("[.]");
+        //group Name
+        result[0]=tmp[0];
+        //rollup
+        result[2]=tmp[tmp.length-1];
+        result[1]=tmp[1];
+        if ( tmp.length > 3){
+         for(int i=2;i<tmp.length-1;++i) {
+            result[1]=result[1]+"."+tmp[i];
+            }
+        }
+        return result;
+    }
 
     /**
      * Main receiver entry point. This will be called for each entity and each metric which were retrieved by
@@ -165,15 +185,21 @@ public class MetricsReceiver implements StatsListReceiver,
             eName=eName.replace(' ','_').replace('-','_');
             
             if (instanceName.equals("")) {
-                node = String.format("%s.%s.%s_%s",graphite_prefix,eName,counterName,statType);
+                String[] counterInfo=splitCounterName(counterName);
+                String groupName    =counterInfo[0];
+                String metricName   =counterInfo[1];
+                String rollup       =counterInfo[2];
+                node = String.format("%s.%s.%s.%s_%s_%s",graphite_prefix,eName,groupName,metricName,rollup,statType);
                 logger.debug("GP :" +graphite_prefix+ " EN: "+eName+" CN :"+ counterName +" ST :"+statType);
             } else {
                 //Get group name (xxxx) metric name (yyyy) and rollup (zzzz) 
                 // from "xxxx.yyyyyy.xxxxx" on the metricName
-                String groupName=counterName.split("[.]",2)[0];
-                String metricName=counterName.split("[.]",2)[1];               
-                node = String.format("%s.%s.%s.%s.%s_%s",graphite_prefix,eName,groupName,instanceName,metricName,statType);
-                logger.debug("GP :" +graphite_prefix+ " EN: "+eName+" GN :"+ groupName +" IN :"+instanceName+" MN :"+metricName+" ST :"+statType);
+                String[] counterInfo=splitCounterName(counterName);
+                String groupName    =counterInfo[0];
+                String metricName   =counterInfo[1];
+                String rollup       =counterInfo[2];         
+                node = String.format("%s.%s.%s.%s.%s_%s_%s",graphite_prefix,eName,groupName,instanceName,metricName,rollup,statType);
+                logger.debug("GP :" +graphite_prefix+ " EN: "+eName+" GN :"+ groupName +" IN :"+instanceName+" MN :"+metricName+" RU"+rollup +"ST :"+statType);
             }
             
             //logger.debug("ENTITY NAME : " + entityName  +" ENTITY NAME2: "+metricSet.getEntityName()+ " COUNTER NAME: " + metricSet.getCounterName());
