@@ -29,6 +29,11 @@ public class MetricsReceiver implements StatsListReceiver,
     Log logger = LogFactory.getLog(MetricsReceiver.class);
 
     private String name = "SampleStatsReceiver";
+    private String graphite_prefix = "vmware";
+    //set to true for backwards compatibility
+    private Boolean use_fqdn = true; 
+    //set to true for backwards compatibility
+    private Boolean use_entity_type_prefix = false;
     private ExecutionContext context;
     private PrintStream writer;
     private Socket client;
@@ -90,6 +95,38 @@ public class MetricsReceiver implements StatsListReceiver,
     @Override
     public void setExecutionContext(ExecutionContext context) {
         this.context = context;
+        String prefix=this.props.getProperty("prefix");
+        String use_fqdn=this.props.getProperty("use_fqdn");
+        String use_entity_type_prefix=this.props.getProperty("use_entity_type_prefix");
+        
+        if(prefix != null && !prefix.isEmpty())
+            this.graphite_prefix=prefix;
+        
+        if(use_fqdn != null && !use_fqdn.isEmpty())
+            this.use_fqdn=Boolean.valueOf(use_fqdn);
+        
+        if(use_entity_type_prefix != null && !use_entity_type_prefix.isEmpty())
+            this.use_entity_type_prefix=Boolean.valueOf(use_entity_type_prefix);
+    }
+    
+    private String[] splitCounterName(String counterName) {
+        //should split string in a 3 componet array
+        // [0] = groupName
+        // [1] = metricName
+        // [2] = rollup
+        String[] result=new String[3];
+        String[] tmp=counterName.split("[.]");
+        //group Name
+        result[0]=tmp[0];
+        //rollup
+        result[2]=tmp[tmp.length-1];
+        result[1]=tmp[1];
+        if ( tmp.length > 3){
+         for(int i=2;i<tmp.length-1;++i) {
+            result[1]=result[1]+"."+tmp[i];
+            }
+        }
+        return result;
     }
 
     /**
@@ -107,12 +144,66 @@ public class MetricsReceiver implements StatsListReceiver,
                     "yyyy-MM-dd'T'HH:mm:ss'Z'");
             SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
             String node;
-            node = String.format(
-                    "monitoring.nagios.%s.%s_%s",
-                    metricSet.getEntityName().replace("[vCenter]", "").replace("[VirtualMachine]", "").replace("[HostSystem]", "").replace('.', '_').replace('-', '_').replace(' ', '_'),
-                    metricSet.getCounterName(),
-                    metricSet.getStatType()
-            );
+            
+            String eName=null;
+            String counterName=metricSet.getCounterName();
+            //Get Instance Name
+            String instanceName=metricSet.getInstanceId()
+                                        .replace('.','_')
+                                        .replace('-','_')
+                                        .replace('/','.')
+                                        .replace(' ','_');
+            String statType=metricSet.getStatType();
+            
+            if(use_entity_type_prefix) {
+                if(entityName.contains("[VirtualMachine]")) {
+                    eName="vm."   +entityName.replace("[vCenter]", "").replace("[VirtualMachine]", "").replace('.', '_');
+                }else if (entityName.contains("[HostSystem]")) {
+                    //for ESX only hostname
+                    if(!use_fqdn) {
+                        eName="esx."  +entityName.replace("[vCenter]", "").replace("[HostSystem]", "").split("[.]",2)[0];
+                    }else {
+                        eName="esx."  +entityName.replace("[vCenter]", "").replace("[HostSystem]", "").replace('.', '_');
+                    }
+                }else if (entityName.contains("[Datastore]")) {
+                    eName="dts."  +entityName.replace("[vCenter]", "").replace("[Datastore]", "").replace('.', '_');
+                }else if (entityName.contains("[ResourcePool]")) {
+                    eName="rp."   +entityName.replace("[vCenter]", "").replace("[ResourcePool]", "").replace('.', '_');
+                }
+                
+            } else {
+                eName=entityName.replace("[vCenter]", "")
+                                .replace("[VirtualMachine]", "")
+                                .replace("[HostSystem]", "")
+                                .replace("[Datastore]", "")
+                                .replace("[ResourcePool]", "");
+                if(!use_fqdn && entityName.contains("[HostSystem]")){
+                    eName=eName.split("[.]",2)[0];
+                }
+                eName=eName.replace('.', '_');
+            }
+            eName=eName.replace(' ','_').replace('-','_');
+            
+            if (instanceName.equals("")) {
+                String[] counterInfo=splitCounterName(counterName);
+                String groupName    =counterInfo[0];
+                String metricName   =counterInfo[1];
+                String rollup       =counterInfo[2];
+                node = String.format("%s.%s.%s.%s_%s_%s",graphite_prefix,eName,groupName,metricName,rollup,statType);
+                logger.debug("GP :" +graphite_prefix+ " EN: "+eName+" CN :"+ counterName +" ST :"+statType);
+            } else {
+                //Get group name (xxxx) metric name (yyyy) and rollup (zzzz) 
+                // from "xxxx.yyyyyy.xxxxx" on the metricName
+                String[] counterInfo=splitCounterName(counterName);
+                String groupName    =counterInfo[0];
+                String metricName   =counterInfo[1];
+                String rollup       =counterInfo[2];         
+                node = String.format("%s.%s.%s.%s.%s_%s_%s",graphite_prefix,eName,groupName,instanceName,metricName,rollup,statType);
+                logger.debug("GP :" +graphite_prefix+ " EN: "+eName+" GN :"+ groupName +" IN :"+instanceName+" MN :"+metricName+" RU"+rollup +"ST :"+statType);
+            }
+            
+            //logger.debug("ENTITY NAME : " + entityName  +" ENTITY NAME2: "+metricSet.getEntityName()+ " COUNTER NAME: " + metricSet.getCounterName());
+            //logger.debug("MOREF : "+metricSet.getMoRef()+ " INSTANCE ID :"+ metricSet.getInstanceId()+" string :"+metricSet.toString());
             try {
                 Iterator<PerfMetric> metrics = metricSet.getMetrics();
                 while (metrics.hasNext()) {

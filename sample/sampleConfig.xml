@@ -50,9 +50,28 @@
                     <name>host</name>
                     <value>metrics.zentrale.de</value>
                 </property>
-				<property>
+		<property>
                     <name>port</name>
                     <value>2003</value>
+                </property>
+		<property>
+                    <name>prefix</name>
+                    <value>esxprefix</value>
+                </property>
+		<property>
+                    <name>use_fqdn</name>
+                    <value>false</value>
+                </property>
+                <!--
+                    if "use_entity_type_prefix" is set to true the receiver will prepend the type
+                    [HostSystem]    => "esx".<hostname>
+                    [VirtuaMachine] => "vm".<vm_name>
+                    [Datastore]     => "dts".<datastore_name>
+                    [ResourcePool]  => "rp".<resource_pool_name>
+                 -->
+		<property>
+                    <name>use_entity_type_prefix</name>
+                    <value>true</value>
                 </property>
             </properties>
         </receiver>
