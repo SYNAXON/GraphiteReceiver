@@ -46,7 +46,6 @@ public class MetricsReceiver implements StatsListReceiver,
     private int freq;
     private MOREFRetriever mor;
     
-    final DateFormat  SDF = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
 
     /**
      * This constructor will be called by StatsFeeder to load this receiver. The props object passed is built
@@ -103,9 +102,6 @@ public class MetricsReceiver implements StatsListReceiver,
     @Override
     public void setExecutionContext(ExecutionContext context) {
         
-        //SDF = new SimpleDateFormat(
-        //            "yyyy-MM-dd'T'HH:mm:ss'Z'");
-        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
         this.context = context;
         this.mor=context.getMorefRetriever();
         this.freq=context.getConfiguration().getFrequencyInSeconds();
@@ -129,6 +125,9 @@ public class MetricsReceiver implements StatsListReceiver,
     }
     
     private void sendAllMetrics(String node,PerfMetricSet metricSet){
+        final DateFormat SDF = new SimpleDateFormat(
+                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
         try {
             Iterator<PerfMetric> metrics = metricSet.getMetrics();
             while (metrics.hasNext()) {
@@ -142,6 +141,9 @@ public class MetricsReceiver implements StatsListReceiver,
             
     private void sendMetricsAverage(String node,PerfMetricSet metricSet,int n){
         //averaging all values with last timestamp
+        final DateFormat SDF = new SimpleDateFormat(
+                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
         try {
             double value;
             Iterator<PerfMetric> metrics = metricSet.getMetrics();
@@ -151,7 +153,7 @@ public class MetricsReceiver implements StatsListReceiver,
             while (metrics.hasNext()) {
                 sample = metrics.next();
                 value+=Double.valueOf(sample.getValue());
-            }   
+            }
             out.printf("%s %f %s%n", node, value/n, SDF.parse(sample.getTimestamp()).getTime() / 1000);
         } catch (NumberFormatException t) {
                 logger.error("Error on number format on metric: "+node, t);
@@ -161,6 +163,9 @@ public class MetricsReceiver implements StatsListReceiver,
     }
 
     private void sendMetricsLatest(String node,PerfMetricSet metricSet) {
+        final DateFormat SDF = new SimpleDateFormat(
+                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
         try{
             //get last
             
@@ -176,6 +181,9 @@ public class MetricsReceiver implements StatsListReceiver,
     }
     
     private void sendMetricsMaximum(String node,PerfMetricSet metricSet) {
+        final DateFormat SDF = new SimpleDateFormat(
+                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
         try {
             double value; 
             Iterator<PerfMetric> metrics = metricSet.getMetrics();
@@ -195,6 +203,9 @@ public class MetricsReceiver implements StatsListReceiver,
     }
 
     private void sendMetricsMinimim(String node,PerfMetricSet metricSet) {
+        final DateFormat SDF = new SimpleDateFormat(
+                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
         try {
             //get minimum values with last timestamp
             double value;     
@@ -215,6 +226,9 @@ public class MetricsReceiver implements StatsListReceiver,
     }
     
     private void sendMetricsSummation(String node,PerfMetricSet metricSet){
+        final DateFormat SDF = new SimpleDateFormat(
+                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
          try {
             //get minimum values with last timestamp
             double value;     
