@@ -6,12 +6,14 @@ import com.vmware.ee.statsfeeder.PerfMetricSet.PerfMetric;
 import com.vmware.ee.statsfeeder.StatsExecutionContextAware;
 import com.vmware.ee.statsfeeder.StatsFeederListener;
 import com.vmware.ee.statsfeeder.StatsListReceiver;
+import com.vmware.ee.statsfeeder.MOREFRetriever;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.text.DateFormat;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Iterator;
 import java.util.Properties;
@@ -34,11 +36,16 @@ public class MetricsReceiver implements StatsListReceiver,
     private Boolean use_fqdn = true; 
     //set to true for backwards compatibility
     private Boolean use_entity_type_prefix = false;
+    private Boolean only_one_sample_x_period=true;
+
     private ExecutionContext context;
     private PrintStream writer;
     private Socket client;
     PrintWriter out;
     private Properties props;
+    private int freq;
+    private MOREFRetriever mor;
+    
 
     /**
      * This constructor will be called by StatsFeeder to load this receiver. The props object passed is built
@@ -94,10 +101,15 @@ public class MetricsReceiver implements StatsListReceiver,
      */
     @Override
     public void setExecutionContext(ExecutionContext context) {
+        
         this.context = context;
+        this.mor=context.getMorefRetriever();
+        this.freq=context.getConfiguration().getFrequencyInSeconds();
+        
         String prefix=this.props.getProperty("prefix");
         String use_fqdn=this.props.getProperty("use_fqdn");
         String use_entity_type_prefix=this.props.getProperty("use_entity_type_prefix");
+        String only_one_sample_x_period=this.props.getProperty("only_one_sample_x_period");
         
         if(prefix != null && !prefix.isEmpty())
             this.graphite_prefix=prefix;
@@ -107,6 +119,132 @@ public class MetricsReceiver implements StatsListReceiver,
         
         if(use_entity_type_prefix != null && !use_entity_type_prefix.isEmpty())
             this.use_entity_type_prefix=Boolean.valueOf(use_entity_type_prefix);
+        
+        if(only_one_sample_x_period!= null && !only_one_sample_x_period.isEmpty())
+            this.only_one_sample_x_period=Boolean.valueOf(only_one_sample_x_period);
+    }
+    
+    private void sendAllMetrics(String node,PerfMetricSet metricSet){
+        final DateFormat SDF = new SimpleDateFormat(
+                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
+        try {
+            Iterator<PerfMetric> metrics = metricSet.getMetrics();
+            while (metrics.hasNext()) {
+                PerfMetric sample = metrics.next();
+                out.printf("%s %s %s%n", node, sample.getValue(), SDF.parse(sample.getTimestamp()).getTime() / 1000);
+            }
+        } catch (Throwable t) {
+                logger.error("Error processing entity stats on metric: "+node, t);
+        }
+    }
+            
+    private void sendMetricsAverage(String node,PerfMetricSet metricSet,int n){
+        //averaging all values with last timestamp
+        final DateFormat SDF = new SimpleDateFormat(
+                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
+        try {
+            double value;
+            Iterator<PerfMetric> metrics = metricSet.getMetrics();
+            //sample initialization
+            PerfMetric sample=metrics.next();
+            value=Double.valueOf(sample.getValue());  
+            while (metrics.hasNext()) {
+                sample = metrics.next();
+                value+=Double.valueOf(sample.getValue());
+            }
+            out.printf("%s %f %s%n", node, value/n, SDF.parse(sample.getTimestamp()).getTime() / 1000);
+        } catch (NumberFormatException t) {
+                logger.error("Error on number format on metric: "+node, t);
+        } catch (ParseException t) {
+            logger.error("Error processing entity stats on metric: "+node, t);
+        }
+    }
+
+    private void sendMetricsLatest(String node,PerfMetricSet metricSet) {
+        final DateFormat SDF = new SimpleDateFormat(
+                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
+        try{
+            //get last
+            
+            Iterator<PerfMetric> metrics = metricSet.getMetrics();
+            PerfMetric sample=metrics.next();
+            while (metrics.hasNext()) {
+                sample = metrics.next();
+            }   
+            out.printf("%s %s %s%n", node,sample.getValue() , SDF.parse(sample.getTimestamp()).getTime() / 1000);  
+        } catch (ParseException t) {
+            logger.error("Error processing entity stats on metric: "+node, t);
+        }
+    }
+    
+    private void sendMetricsMaximum(String node,PerfMetricSet metricSet) {
+        final DateFormat SDF = new SimpleDateFormat(
+                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
+        try {
+            double value; 
+            Iterator<PerfMetric> metrics = metricSet.getMetrics();
+            //first value to compare
+            PerfMetric sample=metrics.next();
+            value=Double.valueOf(sample.getValue());
+            //begin comparison iteration
+            while (metrics.hasNext()) {
+                sample = metrics.next();
+                double last=Double.valueOf(sample.getValue());
+                if(last > value) value=last;
+            }   
+            out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000); 
+        } catch (ParseException t) {
+            logger.error("Error processing entity stats on metric: "+node, t);
+        }
+    }
+
+    private void sendMetricsMinimim(String node,PerfMetricSet metricSet) {
+        final DateFormat SDF = new SimpleDateFormat(
+                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
+        try {
+            //get minimum values with last timestamp
+            double value;     
+            Iterator<PerfMetric> metrics = metricSet.getMetrics();
+            //first value to compare
+            PerfMetric sample=metrics.next();
+            value=Double.valueOf(sample.getValue());
+            //begin comparison iteration
+            while (metrics.hasNext()) {
+                sample = metrics.next();
+                double last=Double.valueOf(sample.getValue());
+                if(last < value) value=last;
+            }   
+            out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000); 
+        } catch (ParseException t) {
+            logger.error("Error processing entity stats on metric: "+node, t);
+        }
+    }
+    
+    private void sendMetricsSummation(String node,PerfMetricSet metricSet){
+        final DateFormat SDF = new SimpleDateFormat(
+                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
+         try {
+            //get minimum values with last timestamp
+            double value;     
+            Iterator<PerfMetric> metrics = metricSet.getMetrics();
+            //first value to compare
+            PerfMetric sample=metrics.next();
+            value=Double.valueOf(sample.getValue());
+            //begin comparison iteration
+            while (metrics.hasNext()) {
+                sample = metrics.next();
+                value+=Double.valueOf(sample.getValue());
+            }   
+            out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000); 
+        } catch (ParseException t) {
+            logger.error("Error processing entity stats on metric: "+node, t);
+        }       
     }
     
     private String[] splitCounterName(String counterName) {
@@ -140,9 +278,7 @@ public class MetricsReceiver implements StatsListReceiver,
     public void receiveStats(String entityName, PerfMetricSet metricSet) {
         if (metricSet != null) {
             //-- Samples come with the following date format
-            final DateFormat SDF = new SimpleDateFormat(
-                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
-            SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
+
             String node;
             
             String eName=null;
@@ -154,6 +290,11 @@ public class MetricsReceiver implements StatsListReceiver,
                                         .replace('/','.')
                                         .replace(' ','_');
             String statType=metricSet.getStatType();
+            
+            String container=null;
+            int interval=metricSet.getInterval();
+            
+            String rollup=null;
             
             if(use_entity_type_prefix) {
                 if(entityName.contains("[VirtualMachine]")) {
@@ -177,18 +318,20 @@ public class MetricsReceiver implements StatsListReceiver,
                                 .replace("[HostSystem]", "")
                                 .replace("[Datastore]", "")
                                 .replace("[ResourcePool]", "");
+                 
                 if(!use_fqdn && entityName.contains("[HostSystem]")){
                     eName=eName.split("[.]",2)[0];
                 }
                 eName=eName.replace('.', '_');
             }
             eName=eName.replace(' ','_').replace('-','_');
-            
+            container=mor.getContainerName(eName);
+            logger.debug("Container Name :" +container + " Interval: "+Integer.toString(interval)+ " Frequency :"+Integer.toString(freq));
             if (instanceName.equals("")) {
                 String[] counterInfo=splitCounterName(counterName);
                 String groupName    =counterInfo[0];
                 String metricName   =counterInfo[1];
-                String rollup       =counterInfo[2];
+                rollup              =counterInfo[2];
                 node = String.format("%s.%s.%s.%s_%s_%s",graphite_prefix,eName,groupName,metricName,rollup,statType);
                 logger.debug("GP :" +graphite_prefix+ " EN: "+eName+" CN :"+ counterName +" ST :"+statType);
             } else {
@@ -197,22 +340,43 @@ public class MetricsReceiver implements StatsListReceiver,
                 String[] counterInfo=splitCounterName(counterName);
                 String groupName    =counterInfo[0];
                 String metricName   =counterInfo[1];
-                String rollup       =counterInfo[2];         
+                rollup              =counterInfo[2];         
                 node = String.format("%s.%s.%s.%s.%s_%s_%s",graphite_prefix,eName,groupName,instanceName,metricName,rollup,statType);
                 logger.debug("GP :" +graphite_prefix+ " EN: "+eName+" GN :"+ groupName +" IN :"+instanceName+" MN :"+metricName+" RU"+rollup +"ST :"+statType);
             }
-            
-            //logger.debug("ENTITY NAME : " + entityName  +" ENTITY NAME2: "+metricSet.getEntityName()+ " COUNTER NAME: " + metricSet.getCounterName());
-            //logger.debug("MOREF : "+metricSet.getMoRef()+ " INSTANCE ID :"+ metricSet.getInstanceId()+" string :"+metricSet.toString());
-            try {
-                Iterator<PerfMetric> metrics = metricSet.getMetrics();
-                while (metrics.hasNext()) {
-                    PerfMetric sample = metrics.next();
-                    out.printf("%s %s %s%n", node, sample.getValue(), SDF.parse(sample.getTimestamp()).getTime() / 1000);
+
+            if(only_one_sample_x_period) {
+                 logger.debug("one sample x period");
+                //check if metricSet has the expected number of metrics
+                int itv=metricSet.getInterval();
+                if(freq % itv != 0) {
+                    logger.warn("frequency "+freq+ " is not multiple of interval: "+itv+ " at metric : "+node);
+                    return;
                 }
-            } catch (Throwable t) {
-                logger.error("Error processing entity stats ", t);
+                int n=freq/itv;
+                if(n != metricSet.getValues().size()){
+                    logger.error("ERROR: "+n+" expected samples but got "+metricSet.getValues().size()+ "at metric :"+node);
+                    return;
+                }
+                if(rollup.equals("average")) {
+                    sendMetricsAverage(node,metricSet,n);
+                } else if(rollup.equals("latest")) {
+                    sendMetricsLatest(node,metricSet);
+                } else if(rollup.equals("maximum")) {
+                    sendMetricsMaximum(node,metricSet);
+                } else if(rollup.equals("minimum")) {
+                    sendMetricsMinimim(node,metricSet);
+                } else if(rollup.equals("summation")) {
+                    sendMetricsSummation(node,metricSet);
+                } else {
+                    logger.info("Not supported Rollup agration:"+rollup);
+                }
+            } else {
+                logger.debug("all samples");
+                sendAllMetrics(node,metricSet);
             }
+               
+
         }
     }
 

@@ -73,6 +73,14 @@
                     <name>use_entity_type_prefix</name>
                     <value>true</value>
                 </property>
+                <!--
+                    if "only_one_sample_x_period" is set to true the receiver do a sumarize process for each
+                    metric depending on the  rollup type
+                -->
+		<property>
+                    <name>only_one_sample_x_period</name>
+                    <value>true</value>
+                </property>
             </properties>
         </receiver>
     </receivers>
