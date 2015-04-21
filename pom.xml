@@ -4,8 +4,8 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <groupId>de.synaxon</groupId>
-    <artifactId>GraphiteReceiver</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <artifactId>statsfeeder-GraphiteReceiver</artifactId>
+    <version>1.0-IPM-3.2</version>
     <packaging>jar</packaging>
     <dependencies>
         <dependency>
@@ -16,6 +16,11 @@
         <dependency>
             <groupId>com.vmware.tools</groupId>
             <artifactId>statsfeeder-common</artifactId>
+            <version>4.1</version>
+        </dependency>
+        <dependency>
+            <groupId>com.vmware.tools</groupId>
+            <artifactId>vsphere-sdk</artifactId>
             <version>4.1</version>
         </dependency>
         <dependency>
