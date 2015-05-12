@@ -54,6 +54,14 @@
                     <name>port</name>
                     <value>2003</value>
                 </property>
+    <property>
+                    <name>disconnection_graphite_after</name>
+                    <value>600000</value>
+                </property>
+    <property>
+                    <name>cache_refresh_interval</name>
+                    <value>3600</value>
+                </property>
 		<property>
                     <name>prefix</name>
                     <value>esxprefix</value>

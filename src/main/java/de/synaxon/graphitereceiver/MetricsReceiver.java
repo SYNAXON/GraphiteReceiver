@@ -21,6 +21,10 @@ import java.util.TimeZone;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import com.vmware.vim25.*;
+import com.vmware.ee.common.VimConnection;
+import java.util.*;
+
 /**
  *
  * @author karl spies
@@ -46,6 +50,14 @@ public class MetricsReceiver implements StatsListReceiver,
     private int freq;
     private MOREFRetriever mor;
     
+    private int disconnectCounter = 0;
+    private int disconnectAfter = -1;
+    private boolean isResetConn = false;
+    private long metricsCount = 0;
+    private boolean isClusterHostMapInitialized = false;
+    private Map clusterMap = Collections.EMPTY_MAP;
+    private int cacheRefreshInterval = -1;
+    private Date cacheRefreshStartTime = null;
 
     /**
      * This constructor will be called by StatsFeeder to load this receiver. The props object passed is built
@@ -73,6 +85,7 @@ public class MetricsReceiver implements StatsListReceiver,
     public MetricsReceiver(String name, Properties props) {
         this.name = name;
         this.props = props;
+        logger.debug("MetricsReceiver Constructor.");
     }
 
     /**
@@ -81,6 +94,7 @@ public class MetricsReceiver implements StatsListReceiver,
      */
     public void setName(String name) {
         this.name = name;
+        this.logger.debug("MetricsReceiver setName: " + this.name);
     }
 
     /**
@@ -88,6 +102,7 @@ public class MetricsReceiver implements StatsListReceiver,
      * @return
      */
     public String getName() {
+        this.logger.debug("MetricsReceiver getName: " + this.name);
         return name;
     }
 
@@ -102,6 +117,7 @@ public class MetricsReceiver implements StatsListReceiver,
     @Override
     public void setExecutionContext(ExecutionContext context) {
         
+        logger.debug("MetricsReceiver in setExecutionContext.");
         this.context = context;
         this.mor=context.getMorefRetriever();
         this.freq=context.getConfiguration().getFrequencyInSeconds();
@@ -122,8 +138,171 @@ public class MetricsReceiver implements StatsListReceiver,
         
         if(only_one_sample_x_period!= null && !only_one_sample_x_period.isEmpty())
             this.only_one_sample_x_period=Boolean.valueOf(only_one_sample_x_period);
+
+        try{
+            this.disconnectAfter = Integer.parseInt(this.props.getProperty("disconnection_graphite_after"));
+            if(this.disconnectAfter < 1){
+                logger.info("if disconnection_graphite_after is set to < 1 will not be supported: " + this.disconnectAfter);
+                this.disconnectAfter = -1;
+            }else{
+                logger.info("In setExecutionContext:: disconnectCounter and disconnectAfter Values: " + this.disconnectCounter + "\t" + this.disconnectAfter);
+            }
+        }catch(Exception e){
+            logger.debug("disconnection_graphite_after attribute is not set or not supported.");
+            logger.debug("disconnection_graphite_after is set to < 1 will not be supported: ");
+            this.disconnectAfter = -1;
+        }
+
+        this.clusterMap = new HashMap();
+
+        try{
+            this.cacheRefreshInterval = Integer.parseInt(this.props.getProperty("cache_refresh_interval"));
+            if(this.cacheRefreshInterval < 1){
+                logger.info("if cache_refresh_interval is set to < 1 will not be supported: " + this.cacheRefreshInterval);
+                this.cacheRefreshInterval = -1;
+            }else{
+                logger.info("setExecutionContext:: cache_refresh_interval Value: " + this.cacheRefreshInterval);
+            }
+        }catch(Exception e){
+            logger.debug("cache_refresh_interval attribute is not set or not supported.");
+            logger.debug("cache_refresh_interval is set to < 1 will not be supported: ");
+            this.cacheRefreshInterval = -1;
+        }
     }
     
+    /**
+     * initClusterHostMap is a self recursive method for generating VM/ESX to Cluster Hash Map.
+     * In the first iteration it gathers all clusters and in consecutive calls for each cluster it updates Hash Map.
+     * The logic here is use ComputeResource Entity as a base for gathering all virtual machines and ESX Hosts.
+     * As part of configurations, GraphiteReceiver invokes this method at regular intervals (configured) and during runtime
+     * if VM/ESX does not exist in the hash map.
+     */
+    public boolean initClusterHostMap(String ClusterName, ManagedObjectReference ClusterMor){
+        try {
+            logger.debug("initClusterHostMap Begin");
+            boolean retVal = true;
+
+            VimConnection connection = this.context.getConnection();
+
+            ManagedObjectReference viewMgrRef = connection.getViewManager();
+            ManagedObjectReference propColl = connection.getPropertyCollector();
+            List<String> clusterList = new ArrayList<String>();
+            clusterList.add("ComputeResource");
+            clusterList.add("HostSystem");
+            clusterList.add("VirtualMachine");
+            ManagedObjectReference rootFolder = null;
+            if(ClusterName == null){
+                rootFolder = connection.getRootFolder();
+                this.clusterMap.clear();
+            }else {
+                rootFolder = ClusterMor;
+            }
+            ManagedObjectReference cViewRef = connection.getVimPort().createContainerView(viewMgrRef, rootFolder, clusterList, true);
+            if(cViewRef != null){
+                logger.debug("cViewRef is not null: " + ClusterName);
+            } else {
+                logger.debug("cViewRef is null: " + ClusterName);
+                return false;
+            }
+
+            TraversalSpec tSpec = new TraversalSpec();
+            tSpec.setName("traverseEntities");
+            tSpec.setPath("view");
+            tSpec.setSkip(false);
+            tSpec.setType("ContainerView");
+
+            ObjectSpec oSpec = new ObjectSpec();
+            oSpec.setObj(cViewRef);
+            oSpec.setSkip(true);
+            oSpec.getSelectSet().add(tSpec);
+
+            TraversalSpec tSpecC = new TraversalSpec();
+            if(ClusterName == null){
+                tSpecC.setType("ComputeResource");
+                tSpecC.setPath("host");
+                tSpecC.setSkip(false);
+            }else{
+                tSpecC.setType("HostSystem");
+                tSpecC.setPath("vm");
+                tSpecC.setSkip(false);
+            }
+            tSpec.getSelectSet().add(tSpecC);
+
+            PropertyFilterSpec fSpec = new PropertyFilterSpec();
+            fSpec.getObjectSet().add(oSpec);
+
+            if(ClusterName == null){
+                PropertySpec pSpecC = new PropertySpec();
+                pSpecC.setType("ComputeResource");
+                pSpecC.getPathSet().add("name");
+                fSpec.getPropSet().add(pSpecC);
+            }else{
+                PropertySpec pSpecH = new PropertySpec();
+                pSpecH.setType("HostSystem");
+                pSpecH.getPathSet().add("name");
+                fSpec.getPropSet().add(pSpecH);
+
+                PropertySpec pSpecV = new PropertySpec();
+                pSpecV.setType("VirtualMachine");
+                pSpecV.getPathSet().add("name");
+                fSpec.getPropSet().add(pSpecV);
+            }
+
+            List<PropertyFilterSpec> fSpecList = new ArrayList<PropertyFilterSpec>();
+            fSpecList.add(fSpec);
+
+            RetrieveOptions ro = new RetrieveOptions();
+            RetrieveResult props = connection.getVimPort().retrievePropertiesEx(propColl, fSpecList, ro);
+
+            while((props != null) && (props.getObjects() != null) && (props.getObjects().size() > 0)){
+                String token = props.getToken();
+                for(ObjectContent oc : props.getObjects()){
+                    List<DynamicProperty> dps = oc.getPropSet();
+
+                    if(ClusterName != null){
+                        String cluster = new String(ClusterName).replace(" ", "_");
+                        String entityName = new String((String)dps.get(0).getVal()).replace(" ", "_");
+                        logger.debug("ClusterName: " + cluster + " : " + oc.getObj().getType() + ": " + entityName + " : ClusterEntityMapSize: " + this.clusterMap.size());
+                        this.clusterMap.put(entityName, cluster);
+                    }
+                    if(ClusterName == null){
+                        this.initClusterHostMap((String)(dps.get(0).getVal()), oc.getObj());
+                    }
+                }
+                if (token == null) break;
+                props = connection.getVimPort().continueRetrievePropertiesEx(propColl, token);
+            } // while
+            logger.debug("initClusterHostMap End");
+            return retVal;
+        } catch(Exception e){
+            logger.fatal("Critical Error Detected.");
+            logger.fatal(e.getLocalizedMessage());
+            return false;
+        }
+    } // initClusterHostMap
+
+    /**
+     * getCluster returns associated cluster to the calling method. If requested VM/ESX managed entity does not exist in the cache,
+     * it refreshes the cache.
+     *
+     * Potential Bottlenecks: If too many new VirtualMachines/ESX hosts added during runtime (between cache refresh intervals - this.cacheRefreshInterval)
+     *                        may affect the performance because of too many vCenter connections and cache refreshments. We have tested & verified 
+     */
+    private String getCluster(String entity){
+        try{
+            String value = (String)this.clusterMap.get(entity);
+            if(value == null){
+                logger.warn("Cluster Not Found for Managed Entity " + entity);
+                logger.warn("Reinitializing Cluster Entity Map");
+                this.initClusterHostMap(null, null);
+                value = (String)this.clusterMap.get(entity);
+            }
+            return value;
+        }catch(Exception e){
+            return null;
+        }
+    }
+
     private void sendAllMetrics(String node,PerfMetricSet metricSet){
         final DateFormat SDF = new SimpleDateFormat(
                     "yyyy-MM-dd'T'HH:mm:ss'Z'");
@@ -131,8 +310,15 @@ public class MetricsReceiver implements StatsListReceiver,
         try {
             Iterator<PerfMetric> metrics = metricSet.getMetrics();
             while (metrics.hasNext()) {
+                if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
+                    logger.debug("sendAllMetrics - PerfMetric Counter Value: " + this.disconnectCounter);
+                    this.resetGraphiteConnection();
+                }
                 PerfMetric sample = metrics.next();
                 out.printf("%s %s %s%n", node, sample.getValue(), SDF.parse(sample.getTimestamp()).getTime() / 1000);
+
+                String str = new String(String.format("%s %s %s%n", node, sample.getValue(), SDF.parse(sample.getTimestamp()).getTime() / 1000));
+                logger.debug("Graphite Output: " + str);
             }
         } catch (Throwable t) {
                 logger.error("Error processing entity stats on metric: "+node, t);
@@ -154,7 +340,14 @@ public class MetricsReceiver implements StatsListReceiver,
                 sample = metrics.next();
                 value+=Double.valueOf(sample.getValue());
             }
+            if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
+                logger.debug("sendMetricsAverage - PerfMetric Counter Value: " + this.disconnectCounter);
+                this.resetGraphiteConnection();
+            }       
             out.printf("%s %f %s%n", node, value/n, SDF.parse(sample.getTimestamp()).getTime() / 1000);
+
+            String str = new String(String.format("%s %f %s%n", node, value/n, SDF.parse(sample.getTimestamp()).getTime() / 1000));
+            logger.debug("Graphite Output Average: " + str);
         } catch (NumberFormatException t) {
                 logger.error("Error on number format on metric: "+node, t);
         } catch (ParseException t) {
@@ -174,7 +367,14 @@ public class MetricsReceiver implements StatsListReceiver,
             while (metrics.hasNext()) {
                 sample = metrics.next();
             }   
+            if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
+                logger.debug("sendMetricsLatest - PerfMetric Counter Value: " + this.disconnectCounter);
+                this.resetGraphiteConnection();
+            }
             out.printf("%s %s %s%n", node,sample.getValue() , SDF.parse(sample.getTimestamp()).getTime() / 1000);  
+
+            String str = new String(String.format("%s %s %s%n", node,sample.getValue() , SDF.parse(sample.getTimestamp()).getTime() / 1000));
+            logger.debug("Graphite Output Latest: " + str);
         } catch (ParseException t) {
             logger.error("Error processing entity stats on metric: "+node, t);
         }
@@ -196,7 +396,14 @@ public class MetricsReceiver implements StatsListReceiver,
                 double last=Double.valueOf(sample.getValue());
                 if(last > value) value=last;
             }   
+            if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
+                logger.debug("sendMetricsMaximum - PerfMetric Counter Value: " + this.disconnectCounter);
+                this.resetGraphiteConnection();
+            }
             out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000); 
+
+            String str = new String(String.format("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000));
+            logger.debug("Graphite Output Maximum: " + str);
         } catch (ParseException t) {
             logger.error("Error processing entity stats on metric: "+node, t);
         }
@@ -219,7 +426,14 @@ public class MetricsReceiver implements StatsListReceiver,
                 double last=Double.valueOf(sample.getValue());
                 if(last < value) value=last;
             }   
+            if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
+                logger.debug("sendMetricsMinimim - PerfMetric Counter Value: " + this.disconnectCounter);
+                this.resetGraphiteConnection();
+            }
             out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000); 
+
+            String str = new String(String.format("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000));
+            logger.debug("Graphite Output Minimum: " + str);
         } catch (ParseException t) {
             logger.error("Error processing entity stats on metric: "+node, t);
         }
@@ -241,7 +455,14 @@ public class MetricsReceiver implements StatsListReceiver,
                 sample = metrics.next();
                 value+=Double.valueOf(sample.getValue());
             }   
+            if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
+                logger.debug("sendMetricsSummation - PerfMetric Counter Value: " + this.disconnectCounter);
+                this.resetGraphiteConnection();
+            }
             out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000); 
+
+            String str = new String(String.format("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000));
+            logger.debug("Graphite Output Summation: " + str);
         } catch (ParseException t) {
             logger.error("Error processing entity stats on metric: "+node, t);
         }       
@@ -271,16 +492,43 @@ public class MetricsReceiver implements StatsListReceiver,
      * Main receiver entry point. This will be called for each entity and each metric which were retrieved by
      * StatsFeeder.
      *
+     * receiveStats becomes a synchronized method for synchronizing all threads. Made this decision because PrintWriter low level Socket
+     * APIs are not completely thread safe. We have observed runtime crashes if all threads call receiveStats method simultaneously.
+     *
      * @param entityName - The name of the statsfeeder entity being retrieved
      * @param metricSet - The set of metrics retrieved for the entity
      */
     @Override
-    public void receiveStats(String entityName, PerfMetricSet metricSet) {
+    public synchronized void receiveStats(String entityName, PerfMetricSet metricSet) {
+    try {
+        logger.debug("MetricsReceiver in receiveStats");
+
+        if(this.isClusterHostMapInitialized == false){
+            if(this.cacheRefreshInterval != -1){
+                this.cacheRefreshStartTime = new Date();
+                logger.info("receiveStats cacheRefreshStartTime: " + cacheRefreshStartTime.toString());
+            }
+            this.isClusterHostMapInitialized = true;
+            this.initClusterHostMap(null, null);
+        }
+
         if (metricSet != null) {
             //-- Samples come with the following date format
 
             String node;
-            
+            String myEntityName = metricSet.getEntityName().replace("[vCenter]", "").replace("[VirtualMachine]", "").replace("[HostSystem]", "");
+            if(myEntityName == null || myEntityName.equals("")){
+                logger.warn("Received Invalid Managed Entity. Failed to Continue.");
+                return;
+            }
+            myEntityName = myEntityName.replace(" ", "_");
+            String cluster = this.getCluster(myEntityName);
+            if(cluster == null || cluster.equals("")){
+                logger.warn("Cluster Not Found for Entity " + myEntityName);
+                return;
+            }
+            logger.debug("Cluster and Entity: " + cluster + " : " + myEntityName);
+
             String eName=null;
             String counterName=metricSet.getCounterName();
             //Get Instance Name
@@ -332,7 +580,7 @@ public class MetricsReceiver implements StatsListReceiver,
                 String groupName    =counterInfo[0];
                 String metricName   =counterInfo[1];
                 rollup              =counterInfo[2];
-                node = String.format("%s.%s.%s.%s_%s_%s",graphite_prefix,eName,groupName,metricName,rollup,statType);
+                node = String.format("%s.%s.%s.%s.%s_%s_%s",graphite_prefix,cluster, eName,groupName,metricName,rollup,statType);
                 logger.debug("GP :" +graphite_prefix+ " EN: "+eName+" CN :"+ counterName +" ST :"+statType);
             } else {
                 //Get group name (xxxx) metric name (yyyy) and rollup (zzzz) 
@@ -341,10 +589,10 @@ public class MetricsReceiver implements StatsListReceiver,
                 String groupName    =counterInfo[0];
                 String metricName   =counterInfo[1];
                 rollup              =counterInfo[2];         
-                node = String.format("%s.%s.%s.%s.%s_%s_%s",graphite_prefix,eName,groupName,instanceName,metricName,rollup,statType);
+                node = String.format("%s.%s.%s.%s.%s.%s_%s_%s",graphite_prefix,cluster, eName,groupName,instanceName,metricName,rollup,statType);
                 logger.debug("GP :" +graphite_prefix+ " EN: "+eName+" GN :"+ groupName +" IN :"+instanceName+" MN :"+metricName+" RU"+rollup +"ST :"+statType);
             }
-
+            metricsCount += metricSet.size();
             if(only_one_sample_x_period) {
                  logger.debug("one sample x period");
                 //check if metricSet has the expected number of metrics
@@ -354,10 +602,13 @@ public class MetricsReceiver implements StatsListReceiver,
                     return;
                 }
                 int n=freq/itv;
+                /* Noticed expected and received samples never match. I think we should check for whether received samples
+                 * is the multiple of expected samples? Commenting here to move forward.
                 if(n != metricSet.getValues().size()){
                     logger.error("ERROR: "+n+" expected samples but got "+metricSet.getValues().size()+ "at metric :"+node);
                     return;
                 }
+                */
                 if(rollup.equals("average")) {
                     sendMetricsAverage(node,metricSet,n);
                 } else if(rollup.equals("latest")) {
@@ -375,8 +626,26 @@ public class MetricsReceiver implements StatsListReceiver,
                 logger.debug("all samples");
                 sendAllMetrics(node,metricSet);
             }
-               
+        } else {
+            logger.debug("MetricsReceiver MetricSet is NULL");
+        }
+        } catch(Exception e){
+            logger.fatal("Unexpected error occurred during metrics collection.", e);
+        }
+    }
 
+    private void resetGraphiteConnection(){
+        try {
+            logger.debug("resetGraphiteConnection. Counter Value " + this.disconnectCounter + " Threshold Value of " + this.disconnectAfter + " reached. resetting Graphite Connection");
+            isResetConn = true;
+            this.onEndRetrieval();
+            this.onStartRetrieval();
+            isResetConn = false;
+        }catch(Exception e){
+            logger.fatal("Failed to Establish Graphite Server connection: " +
+                             this.props.getProperty("host") + "\t" +
+                             Integer.parseInt(this.props.getProperty("port", "2003")));
+            System.exit(-1);
         }
     }
 
@@ -387,6 +656,20 @@ public class MetricsReceiver implements StatsListReceiver,
     @Override
     public void onStartRetrieval() {
         try {
+            logger.debug("onStartRetrieval - Graphite Host and Port: " + this.props.getProperty("host") + "\t" + this.props.getProperty("port"));
+            this.disconnectCounter = 0;
+
+            if(isResetConn != true){
+                metricsCount = 0;
+                if(this.cacheRefreshStartTime != null){
+                    Date cacheRefreshEndTime = new Date();
+                    long refreshCacheTimeDiff = ((cacheRefreshEndTime.getTime()/1000) - (this.cacheRefreshStartTime.getTime()/1000));
+                    if(refreshCacheTimeDiff >= this.cacheRefreshInterval){
+                        this.isClusterHostMapInitialized = false;
+                    }
+                }
+            }
+
             this.client = new Socket(
                     this.props.getProperty("host"),
                     Integer.parseInt(this.props.getProperty("port", "2003"))
@@ -406,6 +689,11 @@ public class MetricsReceiver implements StatsListReceiver,
     @Override
     public void onEndRetrieval() {
         try {
+            logger.debug("MetricsReceiver onEndRetrieval.");
+            if(isResetConn != true){
+                logger.info("onEndRetrieval PerformanceMetricsCountForEachRun: " + metricsCount);
+            }
+
             this.out.close();
             this.client.close();
 
