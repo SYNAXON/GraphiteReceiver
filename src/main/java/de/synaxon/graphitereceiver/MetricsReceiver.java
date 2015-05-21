@@ -48,7 +48,7 @@ public class MetricsReceiver implements StatsListReceiver,
     PrintWriter out;
     private Properties props;
     private int freq;
-    private MOREFRetriever mor;
+    private MOREFRetriever ret;
     
     private int disconnectCounter = 0;
     private int disconnectAfter = -1;
@@ -119,7 +119,7 @@ public class MetricsReceiver implements StatsListReceiver,
         
         logger.debug("MetricsReceiver in setExecutionContext.");
         this.context = context;
-        this.mor=context.getMorefRetriever();
+        this.ret=context.getMorefRetriever();
         this.freq=context.getConfiguration().getFrequencyInSeconds();
         
         String prefix=this.props.getProperty("prefix");
@@ -539,33 +539,29 @@ public class MetricsReceiver implements StatsListReceiver,
                                         .replace(' ','_');
             String statType=metricSet.getStatType();
             
-            String container=null;
+            
             int interval=metricSet.getInterval();
             
             String rollup=null;
             
             if(use_entity_type_prefix) {
                 if(entityName.contains("[VirtualMachine]")) {
-                    eName="vm."   +entityName.replace("[vCenter]", "").replace("[VirtualMachine]", "").replace('.', '_');
+                    eName="vm."+ret.parseEntityName(entityName).replace('.', '_');
                 }else if (entityName.contains("[HostSystem]")) {
                     //for ESX only hostname
                     if(!use_fqdn) {
-                        eName="esx."  +entityName.replace("[vCenter]", "").replace("[HostSystem]", "").split("[.]",2)[0];
+                        eName="esx."+ret.parseEntityName(entityName).split("[.]",2)[0];
                     }else {
-                        eName="esx."  +entityName.replace("[vCenter]", "").replace("[HostSystem]", "").replace('.', '_');
+                        eName="esx."+ret.parseEntityName(entityName).replace('.', '_');
                     }
                 }else if (entityName.contains("[Datastore]")) {
-                    eName="dts."  +entityName.replace("[vCenter]", "").replace("[Datastore]", "").replace('.', '_');
+                    eName="dts."+ret.parseEntityName(entityName).replace('.', '_');
                 }else if (entityName.contains("[ResourcePool]")) {
-                    eName="rp."   +entityName.replace("[vCenter]", "").replace("[ResourcePool]", "").replace('.', '_');
+                    eName="rp."+ret.parseEntityName(entityName).replace('.', '_');
                 }
                 
             } else {
-                eName=entityName.replace("[vCenter]", "")
-                                .replace("[VirtualMachine]", "")
-                                .replace("[HostSystem]", "")
-                                .replace("[Datastore]", "")
-                                .replace("[ResourcePool]", "");
+                eName=ret.parseEntityName(entityName);
                  
                 if(!use_fqdn && entityName.contains("[HostSystem]")){
                     eName=eName.split("[.]",2)[0];
@@ -573,8 +569,7 @@ public class MetricsReceiver implements StatsListReceiver,
                 eName=eName.replace('.', '_');
             }
             eName=eName.replace(' ','_').replace('-','_');
-            container=mor.getContainerName(eName);
-            logger.debug("Container Name :" +container + " Interval: "+Integer.toString(interval)+ " Frequency :"+Integer.toString(freq));
+            logger.debug("Container Name :" +ret.getContainerName(eName) + " Interval: "+Integer.toString(interval)+ " Frequency :"+Integer.toString(freq));
             if (instanceName.equals("")) {
                 String[] counterInfo=splitCounterName(counterName);
                 String groupName    =counterInfo[0];
