@@ -33,6 +33,7 @@ public class MetricsReceiver implements StatsListReceiver,
         StatsFeederListener, StatsExecutionContextAware {
 
     Log logger = LogFactory.getLog(MetricsReceiver.class);
+    private boolean debugLogLevel = logger.isDebugEnabled();
 
     private String name = "SampleStatsReceiver";
     private String graphite_prefix = "vmware";
@@ -140,32 +141,32 @@ public class MetricsReceiver implements StatsListReceiver,
             this.only_one_sample_x_period=Boolean.valueOf(only_one_sample_x_period);
 
         try{
-            this.disconnectAfter = Integer.parseInt(this.props.getProperty("disconnection_graphite_after"));
+            this.disconnectAfter = Integer.parseInt(this.props.getProperty("graphite_force_reconnect_timeout"));
             if(this.disconnectAfter < 1){
-                logger.info("if disconnection_graphite_after is set to < 1 will not be supported: " + this.disconnectAfter);
+                logger.info("if graphite_force_reconnect_timeout is set to < 1 will not be supported: " + this.disconnectAfter);
                 this.disconnectAfter = -1;
             }else{
                 logger.info("In setExecutionContext:: disconnectCounter and disconnectAfter Values: " + this.disconnectCounter + "\t" + this.disconnectAfter);
             }
         }catch(Exception e){
-            logger.debug("disconnection_graphite_after attribute is not set or not supported.");
-            logger.debug("disconnection_graphite_after is set to < 1 will not be supported: ");
+            logger.debug("graphite_force_reconnect_timeout attribute is not set or not supported.");
+            logger.debug("graphite_force_reconnect_timeout is set to < 1 will not be supported: ");
             this.disconnectAfter = -1;
         }
 
         this.clusterMap = new HashMap();
 
         try{
-            this.cacheRefreshInterval = Integer.parseInt(this.props.getProperty("cache_refresh_interval"));
+            this.cacheRefreshInterval = Integer.parseInt(this.props.getProperty("cluster_map_refresh_timeout"));
             if(this.cacheRefreshInterval < 1){
-                logger.info("if cache_refresh_interval is set to < 1 will not be supported: " + this.cacheRefreshInterval);
+                logger.info("if cluster_map_refresh_timeout is set to < 1 will not be supported: " + this.cacheRefreshInterval);
                 this.cacheRefreshInterval = -1;
             }else{
-                logger.info("setExecutionContext:: cache_refresh_interval Value: " + this.cacheRefreshInterval);
+                logger.info("setExecutionContext:: cluster_map_refresh_timeout Value: " + this.cacheRefreshInterval);
             }
         }catch(Exception e){
-            logger.debug("cache_refresh_interval attribute is not set or not supported.");
-            logger.debug("cache_refresh_interval is set to < 1 will not be supported: ");
+            logger.debug("cluster_map_refresh_timeout attribute is not set or not supported.");
+            logger.debug("cluster_map_refresh_timeout is set to < 1 will not be supported: ");
             this.cacheRefreshInterval = -1;
         }
     }
@@ -246,6 +247,18 @@ public class MetricsReceiver implements StatsListReceiver,
                 pSpecV.setType("VirtualMachine");
                 pSpecV.getPathSet().add("name");
                 fSpec.getPropSet().add(pSpecV);
+
+                /* Place Holder. This property spec did not return cluster name for Datastore and ResourcePool.
+                PropertySpec pSpecD = new PropertySpec();
+                pSpecD.setType("Datastore");
+                pSpecD.getPathSet().add("name");
+                fSpec.getPropSet().add(pSpecD);
+
+                PropertySpec pSpecR = new PropertySpec();
+                pSpecR.setType("ResourcePool");
+                pSpecR.getPathSet().add("name");
+                fSpec.getPropSet().add(pSpecR);
+                */
             }
 
             List<PropertyFilterSpec> fSpecList = new ArrayList<PropertyFilterSpec>();
@@ -317,8 +330,10 @@ public class MetricsReceiver implements StatsListReceiver,
                 PerfMetric sample = metrics.next();
                 out.printf("%s %s %s%n", node, sample.getValue(), SDF.parse(sample.getTimestamp()).getTime() / 1000);
 
-                String str = new String(String.format("%s %s %s%n", node, sample.getValue(), SDF.parse(sample.getTimestamp()).getTime() / 1000));
-                logger.debug("Graphite Output: " + str);
+                if(this.debugLogLevel == true){
+                    String str = new String(String.format("%s %s %s%n", node, sample.getValue(), SDF.parse(sample.getTimestamp()).getTime() / 1000));
+                    logger.debug("Graphite Output: " + str);
+                }
             }
         } catch (Throwable t) {
                 logger.error("Error processing entity stats on metric: "+node, t);
@@ -346,8 +361,10 @@ public class MetricsReceiver implements StatsListReceiver,
             }       
             out.printf("%s %f %s%n", node, value/n, SDF.parse(sample.getTimestamp()).getTime() / 1000);
 
-            String str = new String(String.format("%s %f %s%n", node, value/n, SDF.parse(sample.getTimestamp()).getTime() / 1000));
-            logger.debug("Graphite Output Average: " + str);
+            if(this.debugLogLevel == true){
+                String str = new String(String.format("%s %f %s%n", node, value/n, SDF.parse(sample.getTimestamp()).getTime() / 1000));
+                logger.debug("Graphite Output Average: " + str);
+            }
         } catch (NumberFormatException t) {
                 logger.error("Error on number format on metric: "+node, t);
         } catch (ParseException t) {
@@ -373,8 +390,10 @@ public class MetricsReceiver implements StatsListReceiver,
             }
             out.printf("%s %s %s%n", node,sample.getValue() , SDF.parse(sample.getTimestamp()).getTime() / 1000);  
 
-            String str = new String(String.format("%s %s %s%n", node,sample.getValue() , SDF.parse(sample.getTimestamp()).getTime() / 1000));
-            logger.debug("Graphite Output Latest: " + str);
+            if(this.debugLogLevel == true){
+                String str = new String(String.format("%s %s %s%n", node,sample.getValue() , SDF.parse(sample.getTimestamp()).getTime() / 1000));
+                logger.debug("Graphite Output Latest: " + str);
+            }
         } catch (ParseException t) {
             logger.error("Error processing entity stats on metric: "+node, t);
         }
@@ -402,8 +421,10 @@ public class MetricsReceiver implements StatsListReceiver,
             }
             out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000); 
 
-            String str = new String(String.format("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000));
-            logger.debug("Graphite Output Maximum: " + str);
+            if(this.debugLogLevel == true){
+                String str = new String(String.format("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000));
+                logger.debug("Graphite Output Maximum: " + str);
+            }
         } catch (ParseException t) {
             logger.error("Error processing entity stats on metric: "+node, t);
         }
@@ -432,8 +453,10 @@ public class MetricsReceiver implements StatsListReceiver,
             }
             out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000); 
 
-            String str = new String(String.format("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000));
-            logger.debug("Graphite Output Minimum: " + str);
+            if(this.debugLogLevel == true){
+                String str = new String(String.format("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000));
+                logger.debug("Graphite Output Minimum: " + str);
+            }
         } catch (ParseException t) {
             logger.error("Error processing entity stats on metric: "+node, t);
         }
@@ -461,8 +484,10 @@ public class MetricsReceiver implements StatsListReceiver,
             }
             out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000); 
 
-            String str = new String(String.format("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000));
-            logger.debug("Graphite Output Summation: " + str);
+            if(this.debugLogLevel == true){
+                String str = new String(String.format("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000));
+                logger.debug("Graphite Output Summation: " + str);
+            }
         } catch (ParseException t) {
             logger.error("Error processing entity stats on metric: "+node, t);
         }       
@@ -514,20 +539,24 @@ public class MetricsReceiver implements StatsListReceiver,
 
         if (metricSet != null) {
             //-- Samples come with the following date format
-
             String node;
-            String myEntityName = metricSet.getEntityName().replace("[vCenter]", "").replace("[VirtualMachine]", "").replace("[HostSystem]", "");
-            if(myEntityName == null || myEntityName.equals("")){
-                logger.warn("Received Invalid Managed Entity. Failed to Continue.");
-                return;
+            String cluster = null;
+
+            if((metricSet.getEntityName().contains("VirtualMachine") == true) ||
+               (metricSet.getEntityName().contains("HostSystem") == true)){
+                String myEntityName = metricSet.getEntityName().replace("[vCenter]", "").replace("[VirtualMachine]", "").replace("[HostSystem]", "");
+                if(myEntityName == null || myEntityName.equals("")){
+                    logger.warn("Received Invalid Managed Entity. Failed to Continue.");
+                    return;
+                }
+                myEntityName = myEntityName.replace(" ", "_");
+                cluster = this.getCluster(myEntityName);
+                if(cluster == null || cluster.equals("")){
+                    logger.warn("Cluster Not Found for Entity " + myEntityName);
+                    return;
+                }
+                logger.debug("Cluster and Entity: " + cluster + " : " + myEntityName);
             }
-            myEntityName = myEntityName.replace(" ", "_");
-            String cluster = this.getCluster(myEntityName);
-            if(cluster == null || cluster.equals("")){
-                logger.warn("Cluster Not Found for Entity " + myEntityName);
-                return;
-            }
-            logger.debug("Cluster and Entity: " + cluster + " : " + myEntityName);
 
             String eName=null;
             String counterName=metricSet.getCounterName();
@@ -580,8 +609,11 @@ public class MetricsReceiver implements StatsListReceiver,
                 String groupName    =counterInfo[0];
                 String metricName   =counterInfo[1];
                 rollup              =counterInfo[2];
-                node = String.format("%s.%s.%s.%s.%s_%s_%s",graphite_prefix,cluster, eName,groupName,metricName,rollup,statType);
-                logger.debug("GP :" +graphite_prefix+ " EN: "+eName+" CN :"+ counterName +" ST :"+statType);
+                if(cluster !=null)
+                    node = String.format("%s.%s.%s.%s.%s_%s_%s",graphite_prefix,cluster,eName,groupName,metricName,rollup,statType);
+                else
+                    node = String.format("%s.%s.%s.%s_%s_%s",graphite_prefix,eName,groupName,metricName,rollup,statType);
+                logger.debug("GP :" +graphite_prefix+ " EN: "+eName+" CN: "+ counterName +" ST: "+statType);
             } else {
                 //Get group name (xxxx) metric name (yyyy) and rollup (zzzz) 
                 // from "xxxx.yyyyyy.xxxxx" on the metricName
@@ -589,8 +621,11 @@ public class MetricsReceiver implements StatsListReceiver,
                 String groupName    =counterInfo[0];
                 String metricName   =counterInfo[1];
                 rollup              =counterInfo[2];         
-                node = String.format("%s.%s.%s.%s.%s.%s_%s_%s",graphite_prefix,cluster, eName,groupName,instanceName,metricName,rollup,statType);
-                logger.debug("GP :" +graphite_prefix+ " EN: "+eName+" GN :"+ groupName +" IN :"+instanceName+" MN :"+metricName+" RU"+rollup +"ST :"+statType);
+                if(cluster !=null)
+                    node = String.format("%s.%s.%s.%s.%s.%s_%s_%s",graphite_prefix,cluster,eName,groupName,instanceName,metricName,rollup,statType);
+                else
+                    node = String.format("%s.%s.%s.%s.%s_%s_%s",graphite_prefix,eName,groupName,instanceName,metricName,rollup,statType);
+                logger.debug("GP :" +graphite_prefix+ " EN: "+eName+" GN :"+ groupName +" IN :"+instanceName+" MN :"+metricName+" RU: "+rollup +" ST: "+statType);
             }
             metricsCount += metricSet.size();
             if(only_one_sample_x_period) {
