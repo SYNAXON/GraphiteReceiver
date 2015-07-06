@@ -1,29 +1,29 @@
 package de.synaxon.graphitereceiver;
 
-        import com.vmware.ee.statsfeeder.ExecutionContext;
-        import com.vmware.ee.statsfeeder.PerfMetricSet;
-        import com.vmware.ee.statsfeeder.PerfMetricSet.PerfMetric;
-        import com.vmware.ee.statsfeeder.StatsExecutionContextAware;
-        import com.vmware.ee.statsfeeder.StatsFeederListener;
-        import com.vmware.ee.statsfeeder.StatsListReceiver;
-        import com.vmware.ee.statsfeeder.MOREFRetriever;
-        import java.io.IOException;
-        import java.io.OutputStream;
-        import java.io.PrintStream;
-        import java.io.PrintWriter;
-        import java.net.Socket;
-        import java.text.DateFormat;
-        import java.text.ParseException;
-        import java.text.SimpleDateFormat;
-        import java.util.Iterator;
-        import java.util.Properties;
-        import java.util.TimeZone;
-        import org.apache.commons.logging.Log;
-        import org.apache.commons.logging.LogFactory;
+import com.vmware.ee.statsfeeder.ExecutionContext;
+import com.vmware.ee.statsfeeder.PerfMetricSet;
+import com.vmware.ee.statsfeeder.PerfMetricSet.PerfMetric;
+import com.vmware.ee.statsfeeder.StatsExecutionContextAware;
+import com.vmware.ee.statsfeeder.StatsFeederListener;
+import com.vmware.ee.statsfeeder.StatsListReceiver;
+import com.vmware.ee.statsfeeder.MOREFRetriever;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PrintStream;
+import java.io.PrintWriter;
+import java.net.Socket;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Iterator;
+import java.util.Properties;
+import java.util.TimeZone;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
-        import com.vmware.vim25.*;
-        import com.vmware.ee.common.VimConnection;
-        import java.util.*;
+import com.vmware.vim25.*;
+import com.vmware.ee.common.VimConnection;
+import java.util.*;
 
 /**
  *
@@ -616,6 +616,8 @@ public class MetricsReceiver implements StatsListReceiver,
                  */
                 //Get group name (xxxx) metric name (yyyy) and rollup (zzzz)
                 // from "xxxx.yyyyyy.xxxxx" on the metricName
+                cluster = cluster.replace(".", "_");
+
                 String[] counterInfo = splitCounterName(counterName);
                 String groupName = counterInfo[0];
                 String metricName = counterInfo[1];
