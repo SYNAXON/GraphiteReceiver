@@ -1,29 +1,29 @@
 package de.synaxon.graphitereceiver;
 
-import com.vmware.ee.statsfeeder.ExecutionContext;
-import com.vmware.ee.statsfeeder.PerfMetricSet;
-import com.vmware.ee.statsfeeder.PerfMetricSet.PerfMetric;
-import com.vmware.ee.statsfeeder.StatsExecutionContextAware;
-import com.vmware.ee.statsfeeder.StatsFeederListener;
-import com.vmware.ee.statsfeeder.StatsListReceiver;
-import com.vmware.ee.statsfeeder.MOREFRetriever;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.PrintStream;
-import java.io.PrintWriter;
-import java.net.Socket;
-import java.text.DateFormat;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
-import java.util.Iterator;
-import java.util.Properties;
-import java.util.TimeZone;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+        import com.vmware.ee.statsfeeder.ExecutionContext;
+        import com.vmware.ee.statsfeeder.PerfMetricSet;
+        import com.vmware.ee.statsfeeder.PerfMetricSet.PerfMetric;
+        import com.vmware.ee.statsfeeder.StatsExecutionContextAware;
+        import com.vmware.ee.statsfeeder.StatsFeederListener;
+        import com.vmware.ee.statsfeeder.StatsListReceiver;
+        import com.vmware.ee.statsfeeder.MOREFRetriever;
+        import java.io.IOException;
+        import java.io.OutputStream;
+        import java.io.PrintStream;
+        import java.io.PrintWriter;
+        import java.net.Socket;
+        import java.text.DateFormat;
+        import java.text.ParseException;
+        import java.text.SimpleDateFormat;
+        import java.util.Iterator;
+        import java.util.Properties;
+        import java.util.TimeZone;
+        import org.apache.commons.logging.Log;
+        import org.apache.commons.logging.LogFactory;
 
-import com.vmware.vim25.*;
-import com.vmware.ee.common.VimConnection;
-import java.util.*;
+        import com.vmware.vim25.*;
+        import com.vmware.ee.common.VimConnection;
+        import java.util.*;
 
 /**
  *
@@ -38,7 +38,7 @@ public class MetricsReceiver implements StatsListReceiver,
     private String name = "SampleStatsReceiver";
     private String graphite_prefix = "vmware";
     //set to true for backwards compatibility
-    private Boolean use_fqdn = true; 
+    private Boolean use_fqdn = true;
     //set to true for backwards compatibility
     private Boolean use_entity_type_prefix = false;
     private Boolean only_one_sample_x_period=true;
@@ -50,7 +50,7 @@ public class MetricsReceiver implements StatsListReceiver,
     private Properties props;
     private int freq;
     private MOREFRetriever ret;
-    
+
     private int disconnectCounter = 0;
     private int disconnectAfter = -1;
     private boolean isResetConn = false;
@@ -60,6 +60,7 @@ public class MetricsReceiver implements StatsListReceiver,
     private int cacheRefreshInterval = -1;
     private Date cacheRefreshStartTime = null;
 
+    private boolean place_rollup_in_the_end;
     /**
      * This constructor will be called by StatsFeeder to load this receiver. The props object passed is built
      * from the content in the XML configuration for the receiver.
@@ -117,28 +118,34 @@ public class MetricsReceiver implements StatsListReceiver,
      */
     @Override
     public void setExecutionContext(ExecutionContext context) {
-        
+
         logger.debug("MetricsReceiver in setExecutionContext.");
         this.context = context;
         this.ret=context.getMorefRetriever();
         this.freq=context.getConfiguration().getFrequencyInSeconds();
-        
+
         String prefix=this.props.getProperty("prefix");
         String use_fqdn=this.props.getProperty("use_fqdn");
         String use_entity_type_prefix=this.props.getProperty("use_entity_type_prefix");
         String only_one_sample_x_period=this.props.getProperty("only_one_sample_x_period");
-        
+
         if(prefix != null && !prefix.isEmpty())
             this.graphite_prefix=prefix;
-        
+
         if(use_fqdn != null && !use_fqdn.isEmpty())
             this.use_fqdn=Boolean.valueOf(use_fqdn);
-        
+
         if(use_entity_type_prefix != null && !use_entity_type_prefix.isEmpty())
             this.use_entity_type_prefix=Boolean.valueOf(use_entity_type_prefix);
-        
+
         if(only_one_sample_x_period!= null && !only_one_sample_x_period.isEmpty())
             this.only_one_sample_x_period=Boolean.valueOf(only_one_sample_x_period);
+
+        if(this.props.getProperty("place_rollup_in_the_end") != null && !this.props.getProperty("place_rollup_in_the_end").isEmpty()) {
+            this.place_rollup_in_the_end = Boolean.valueOf(this.props.getProperty("place_rollup_in_the_end"));
+        } else {
+            this.place_rollup_in_the_end = false;
+        }
 
         try{
             this.disconnectAfter = Integer.parseInt(this.props.getProperty("graphite_force_reconnect_timeout"));
@@ -170,7 +177,7 @@ public class MetricsReceiver implements StatsListReceiver,
             this.cacheRefreshInterval = -1;
         }
     }
-    
+
     /**
      * initClusterHostMap is a self recursive method for generating VM/ESX to Cluster Hash Map.
      * In the first iteration it gathers all clusters and in consecutive calls for each cluster it updates Hash Map.
@@ -253,7 +260,6 @@ public class MetricsReceiver implements StatsListReceiver,
                 pSpecD.setType("Datastore");
                 pSpecD.getPathSet().add("name");
                 fSpec.getPropSet().add(pSpecD);
-
                 PropertySpec pSpecR = new PropertySpec();
                 pSpecR.setType("ResourcePool");
                 pSpecR.getPathSet().add("name");
@@ -299,7 +305,7 @@ public class MetricsReceiver implements StatsListReceiver,
      * it refreshes the cache.
      *
      * Potential Bottlenecks: If too many new VirtualMachines/ESX hosts added during runtime (between cache refresh intervals - this.cacheRefreshInterval)
-     *                        may affect the performance because of too many vCenter connections and cache refreshments. We have tested & verified 
+     *                        may affect the performance because of too many vCenter connections and cache refreshments. We have tested & verified
      */
     private String getCluster(String entity){
         try{
@@ -318,7 +324,7 @@ public class MetricsReceiver implements StatsListReceiver,
 
     private void sendAllMetrics(String node,PerfMetricSet metricSet){
         final DateFormat SDF = new SimpleDateFormat(
-                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+                "yyyy-MM-dd'T'HH:mm:ss'Z'");
         SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
         try {
             Iterator<PerfMetric> metrics = metricSet.getMetrics();
@@ -336,21 +342,21 @@ public class MetricsReceiver implements StatsListReceiver,
                 }
             }
         } catch (Throwable t) {
-                logger.error("Error processing entity stats on metric: "+node, t);
+            logger.error("Error processing entity stats on metric: "+node, t);
         }
     }
-            
+
     private void sendMetricsAverage(String node,PerfMetricSet metricSet,int n){
         //averaging all values with last timestamp
         final DateFormat SDF = new SimpleDateFormat(
-                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+                "yyyy-MM-dd'T'HH:mm:ss'Z'");
         SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
         try {
             double value;
             Iterator<PerfMetric> metrics = metricSet.getMetrics();
             //sample initialization
             PerfMetric sample=metrics.next();
-            value=Double.valueOf(sample.getValue());  
+            value=Double.valueOf(sample.getValue());
             while (metrics.hasNext()) {
                 sample = metrics.next();
                 value+=Double.valueOf(sample.getValue());
@@ -358,7 +364,7 @@ public class MetricsReceiver implements StatsListReceiver,
             if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
                 logger.debug("sendMetricsAverage - PerfMetric Counter Value: " + this.disconnectCounter);
                 this.resetGraphiteConnection();
-            }       
+            }
             out.printf("%s %f %s%n", node, value/n, SDF.parse(sample.getTimestamp()).getTime() / 1000);
 
             if(this.debugLogLevel == true){
@@ -366,7 +372,7 @@ public class MetricsReceiver implements StatsListReceiver,
                 logger.debug("Graphite Output Average: " + str);
             }
         } catch (NumberFormatException t) {
-                logger.error("Error on number format on metric: "+node, t);
+            logger.error("Error on number format on metric: "+node, t);
         } catch (ParseException t) {
             logger.error("Error processing entity stats on metric: "+node, t);
         }
@@ -374,21 +380,21 @@ public class MetricsReceiver implements StatsListReceiver,
 
     private void sendMetricsLatest(String node,PerfMetricSet metricSet) {
         final DateFormat SDF = new SimpleDateFormat(
-                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+                "yyyy-MM-dd'T'HH:mm:ss'Z'");
         SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
         try{
             //get last
-            
+
             Iterator<PerfMetric> metrics = metricSet.getMetrics();
             PerfMetric sample=metrics.next();
             while (metrics.hasNext()) {
                 sample = metrics.next();
-            }   
+            }
             if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
                 logger.debug("sendMetricsLatest - PerfMetric Counter Value: " + this.disconnectCounter);
                 this.resetGraphiteConnection();
             }
-            out.printf("%s %s %s%n", node,sample.getValue() , SDF.parse(sample.getTimestamp()).getTime() / 1000);  
+            out.printf("%s %s %s%n", node,sample.getValue() , SDF.parse(sample.getTimestamp()).getTime() / 1000);
 
             if(this.debugLogLevel == true){
                 String str = new String(String.format("%s %s %s%n", node,sample.getValue() , SDF.parse(sample.getTimestamp()).getTime() / 1000));
@@ -398,13 +404,13 @@ public class MetricsReceiver implements StatsListReceiver,
             logger.error("Error processing entity stats on metric: "+node, t);
         }
     }
-    
+
     private void sendMetricsMaximum(String node,PerfMetricSet metricSet) {
         final DateFormat SDF = new SimpleDateFormat(
-                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+                "yyyy-MM-dd'T'HH:mm:ss'Z'");
         SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
         try {
-            double value; 
+            double value;
             Iterator<PerfMetric> metrics = metricSet.getMetrics();
             //first value to compare
             PerfMetric sample=metrics.next();
@@ -414,12 +420,12 @@ public class MetricsReceiver implements StatsListReceiver,
                 sample = metrics.next();
                 double last=Double.valueOf(sample.getValue());
                 if(last > value) value=last;
-            }   
+            }
             if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
                 logger.debug("sendMetricsMaximum - PerfMetric Counter Value: " + this.disconnectCounter);
                 this.resetGraphiteConnection();
             }
-            out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000); 
+            out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000);
 
             if(this.debugLogLevel == true){
                 String str = new String(String.format("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000));
@@ -432,11 +438,11 @@ public class MetricsReceiver implements StatsListReceiver,
 
     private void sendMetricsMinimim(String node,PerfMetricSet metricSet) {
         final DateFormat SDF = new SimpleDateFormat(
-                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+                "yyyy-MM-dd'T'HH:mm:ss'Z'");
         SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
         try {
             //get minimum values with last timestamp
-            double value;     
+            double value;
             Iterator<PerfMetric> metrics = metricSet.getMetrics();
             //first value to compare
             PerfMetric sample=metrics.next();
@@ -446,12 +452,12 @@ public class MetricsReceiver implements StatsListReceiver,
                 sample = metrics.next();
                 double last=Double.valueOf(sample.getValue());
                 if(last < value) value=last;
-            }   
+            }
             if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
                 logger.debug("sendMetricsMinimim - PerfMetric Counter Value: " + this.disconnectCounter);
                 this.resetGraphiteConnection();
             }
-            out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000); 
+            out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000);
 
             if(this.debugLogLevel == true){
                 String str = new String(String.format("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000));
@@ -461,14 +467,14 @@ public class MetricsReceiver implements StatsListReceiver,
             logger.error("Error processing entity stats on metric: "+node, t);
         }
     }
-    
+
     private void sendMetricsSummation(String node,PerfMetricSet metricSet){
         final DateFormat SDF = new SimpleDateFormat(
-                    "yyyy-MM-dd'T'HH:mm:ss'Z'");
+                "yyyy-MM-dd'T'HH:mm:ss'Z'");
         SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
-         try {
+        try {
             //get minimum values with last timestamp
-            double value;     
+            double value;
             Iterator<PerfMetric> metrics = metricSet.getMetrics();
             //first value to compare
             PerfMetric sample=metrics.next();
@@ -477,12 +483,12 @@ public class MetricsReceiver implements StatsListReceiver,
             while (metrics.hasNext()) {
                 sample = metrics.next();
                 value+=Double.valueOf(sample.getValue());
-            }   
+            }
             if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
                 logger.debug("sendMetricsSummation - PerfMetric Counter Value: " + this.disconnectCounter);
                 this.resetGraphiteConnection();
             }
-            out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000); 
+            out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000);
 
             if(this.debugLogLevel == true){
                 String str = new String(String.format("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000));
@@ -490,9 +496,9 @@ public class MetricsReceiver implements StatsListReceiver,
             }
         } catch (ParseException t) {
             logger.error("Error processing entity stats on metric: "+node, t);
-        }       
+        }
     }
-    
+
     private String[] splitCounterName(String counterName) {
         //should split string in a 3 componet array
         // [0] = groupName
@@ -506,8 +512,8 @@ public class MetricsReceiver implements StatsListReceiver,
         result[2]=tmp[tmp.length-1];
         result[1]=tmp[1];
         if ( tmp.length > 3){
-         for(int i=2;i<tmp.length-1;++i) {
-            result[1]=result[1]+"."+tmp[i];
+            for(int i=2;i<tmp.length-1;++i) {
+                result[1]=result[1]+"."+tmp[i];
             }
         }
         return result;
@@ -525,113 +531,125 @@ public class MetricsReceiver implements StatsListReceiver,
      */
     @Override
     public synchronized void receiveStats(String entityName, PerfMetricSet metricSet) {
-    try {
-        logger.debug("MetricsReceiver in receiveStats");
+        try {
+            logger.debug("MetricsReceiver in receiveStats");
 
-        if(this.isClusterHostMapInitialized == false){
-            if(this.cacheRefreshInterval != -1){
-                this.cacheRefreshStartTime = new Date();
-                logger.info("receiveStats cacheRefreshStartTime: " + cacheRefreshStartTime.toString());
-            }
-            this.isClusterHostMapInitialized = true;
-            this.initClusterHostMap(null, null);
-        }
-
-        if (metricSet != null) {
-            //-- Samples come with the following date format
-            String node;
-            String cluster = null;
-
-            if((metricSet.getEntityName().contains("VirtualMachine") == true) ||
-               (metricSet.getEntityName().contains("HostSystem") == true)){
-                String myEntityName = metricSet.getEntityName().replace("[vCenter]", "").replace("[VirtualMachine]", "").replace("[HostSystem]", "");
-                if(myEntityName == null || myEntityName.equals("")){
-                    logger.warn("Received Invalid Managed Entity. Failed to Continue.");
-                    return;
+            if(this.isClusterHostMapInitialized == false){
+                if(this.cacheRefreshInterval != -1){
+                    this.cacheRefreshStartTime = new Date();
+                    logger.info("receiveStats cacheRefreshStartTime: " + cacheRefreshStartTime.toString());
                 }
-                myEntityName = myEntityName.replace(" ", "_");
-                cluster = this.getCluster(myEntityName);
-                if(cluster == null || cluster.equals("")){
-                    logger.warn("Cluster Not Found for Entity " + myEntityName);
-                    return;
-                }
-                logger.debug("Cluster and Entity: " + cluster + " : " + myEntityName);
+                this.isClusterHostMapInitialized = true;
+                this.initClusterHostMap(null, null);
             }
 
-            String eName=null;
-            String counterName=metricSet.getCounterName();
-            //Get Instance Name
-            String instanceName=metricSet.getInstanceId()
-                                        .replace('.','_')
-                                        .replace('-','_')
-                                        .replace('/','.')
-                                        .replace(' ','_');
-            String statType=metricSet.getStatType();
-            
-            
-            int interval=metricSet.getInterval();
-            
-            String rollup=null;
-            
-            if(use_entity_type_prefix) {
-                if(entityName.contains("[VirtualMachine]")) {
-                    eName="vm."+ret.parseEntityName(entityName).replace('.', '_');
-                }else if (entityName.contains("[HostSystem]")) {
-                    //for ESX only hostname
-                    if(!use_fqdn) {
-                        eName="esx."+ret.parseEntityName(entityName).split("[.]",2)[0];
-                    }else {
-                        eName="esx."+ret.parseEntityName(entityName).replace('.', '_');
+            if (metricSet != null) {
+                //-- Samples come with the following date format
+                String node;
+                String cluster = null;
+
+                if((metricSet.getEntityName().contains("VirtualMachine") == true) ||
+                        (metricSet.getEntityName().contains("HostSystem") == true)){
+                    String myEntityName = metricSet.getEntityName().replace("[vCenter]", "").replace("[VirtualMachine]", "").replace("[HostSystem]", "");
+                    if(myEntityName == null || myEntityName.equals("")){
+                        logger.warn("Received Invalid Managed Entity. Failed to Continue.");
+                        return;
                     }
-                }else if (entityName.contains("[Datastore]")) {
-                    eName="dts."+ret.parseEntityName(entityName).replace('.', '_');
-                }else if (entityName.contains("[ResourcePool]")) {
-                    eName="rp."+ret.parseEntityName(entityName).replace('.', '_');
+                    myEntityName = myEntityName.replace(" ", "_");
+                    cluster = this.getCluster(myEntityName);
+                    if(cluster == null || cluster.equals("")){
+                        logger.warn("Cluster Not Found for Entity " + myEntityName);
+                        return;
+                    }
+                    logger.debug("Cluster and Entity: " + cluster + " : " + myEntityName);
                 }
-                
-            } else {
-                eName=ret.parseEntityName(entityName);
-                 
-                if(!use_fqdn && entityName.contains("[HostSystem]")){
-                    eName=eName.split("[.]",2)[0];
+
+                String eName=null;
+                String counterName=metricSet.getCounterName();
+                //Get Instance Name
+                String instanceName=metricSet.getInstanceId()
+                        .replace('.','_')
+                        .replace('-','_')
+                        .replace('/','.')
+                        .replace(' ','_');
+                String statType=metricSet.getStatType();
+
+
+                int interval=metricSet.getInterval();
+
+                String rollup=null;
+
+                if(use_entity_type_prefix) {
+                    if(entityName.contains("[VirtualMachine]")) {
+                        eName="vm."+ret.parseEntityName(entityName).replace('.', '_');
+                    }else if (entityName.contains("[HostSystem]")) {
+                        //for ESX only hostname
+                        if(!use_fqdn) {
+                            eName="esx."+ret.parseEntityName(entityName).split("[.]",2)[0];
+                        }else {
+                            eName="esx."+ret.parseEntityName(entityName).replace('.', '_');
+                        }
+                    }else if (entityName.contains("[Datastore]")) {
+                        eName="dts."+ret.parseEntityName(entityName).replace('.', '_');
+                    }else if (entityName.contains("[ResourcePool]")) {
+                        eName="rp."+ret.parseEntityName(entityName).replace('.', '_');
+                    }
+
+                } else {
+                    eName=ret.parseEntityName(entityName);
+
+                    if(!use_fqdn && entityName.contains("[HostSystem]")){
+                        eName=eName.split("[.]",2)[0];
+                    }
+                    eName=eName.replace('.', '_');
                 }
-                eName=eName.replace('.', '_');
-            }
-            eName=eName.replace(' ','_').replace('-','_');
-            logger.debug("Container Name :" +ret.getContainerName(eName) + " Interval: "+Integer.toString(interval)+ " Frequency :"+Integer.toString(freq));
-            if (instanceName.equals("")) {
-                String[] counterInfo=splitCounterName(counterName);
-                String groupName    =counterInfo[0];
-                String metricName   =counterInfo[1];
-                rollup              =counterInfo[2];
-                if(cluster !=null)
-                    node = String.format("%s.%s.%s.%s.%s_%s_%s",graphite_prefix,cluster,eName,groupName,metricName,rollup,statType);
-                else
-                    node = String.format("%s.%s.%s.%s_%s_%s",graphite_prefix,eName,groupName,metricName,rollup,statType);
-                logger.debug("GP :" +graphite_prefix+ " EN: "+eName+" CN: "+ counterName +" ST: "+statType);
-            } else {
-                //Get group name (xxxx) metric name (yyyy) and rollup (zzzz) 
+                eName=eName.replace(' ','_').replace('-','_');
+                logger.debug("Container Name :" +ret.getContainerName(eName) + " Interval: "+Integer.toString(interval)+ " Frequency :"+Integer.toString(freq));
+
+                /*
+                    Finally node contains these fields (depending on properties)
+                    graphite_prefix.cluster.eName.groupName.instanceName.metricName_rollup_statType
+                    graphite_prefix.cluster.eName.groupName.instanceName.metricName_statType_rollup
+
+                    NOTES: if cluster is null cluster name disappears from node string.
+                           if instanceName is null instanceName name disappears from node string.
+                 */
+                //Get group name (xxxx) metric name (yyyy) and rollup (zzzz)
                 // from "xxxx.yyyyyy.xxxxx" on the metricName
-                String[] counterInfo=splitCounterName(counterName);
-                String groupName    =counterInfo[0];
-                String metricName   =counterInfo[1];
-                rollup              =counterInfo[2];         
-                if(cluster !=null)
-                    node = String.format("%s.%s.%s.%s.%s.%s_%s_%s",graphite_prefix,cluster,eName,groupName,instanceName,metricName,rollup,statType);
-                else
-                    node = String.format("%s.%s.%s.%s.%s_%s_%s",graphite_prefix,eName,groupName,instanceName,metricName,rollup,statType);
-                logger.debug("GP :" +graphite_prefix+ " EN: "+eName+" GN :"+ groupName +" IN :"+instanceName+" MN :"+metricName+" RU: "+rollup +" ST: "+statType);
-            }
-            metricsCount += metricSet.size();
-            if(only_one_sample_x_period) {
-                 logger.debug("one sample x period");
-                //check if metricSet has the expected number of metrics
-                int itv=metricSet.getInterval();
-                if(freq % itv != 0) {
-                    logger.warn("frequency "+freq+ " is not multiple of interval: "+itv+ " at metric : "+node);
-                    return;
+                String[] counterInfo = splitCounterName(counterName);
+                String groupName = counterInfo[0];
+                String metricName = counterInfo[1];
+                rollup = counterInfo[2];
+
+                StringBuilder nodeBuilder = new StringBuilder();
+                nodeBuilder.append(graphite_prefix).append(".");
+                nodeBuilder.append((cluster == null || ("".equals(cluster))) ? "" : cluster + ".");
+                nodeBuilder.append(eName).append(".");
+                nodeBuilder.append(groupName).append(".");
+                nodeBuilder.append((instanceName == null || ("".equals(instanceName))) ? "" : instanceName + ".");
+                nodeBuilder.append(metricName).append("_");
+                if(place_rollup_in_the_end){
+                    nodeBuilder.append(statType).append("_");
+                    nodeBuilder.append(rollup);
+                } else {
+                    nodeBuilder.append(rollup).append("_");
+                    nodeBuilder.append(statType);
                 }
-                int n=freq/itv;
+                logger.debug((instanceName == null || ("".equals(instanceName))) ?
+                                new StringBuilder("GP :").append(graphite_prefix).append(" EN: ").append(eName).append(" CN: ").append(counterName).append(" ST: ").append(statType).toString():
+                                new StringBuilder("GP :").append(graphite_prefix).append(" EN: ").append(eName).append(" GN :").append(groupName).append(" IN :").append(instanceName).append(" MN :").append(metricName).append(" ST: ").append(statType).append(" RU: ").append(rollup).toString()
+                );
+                node = nodeBuilder.toString();
+                metricsCount += metricSet.size();
+                if(only_one_sample_x_period) {
+                    logger.debug("one sample x period");
+                    //check if metricSet has the expected number of metrics
+                    int itv=metricSet.getInterval();
+                    if(freq % itv != 0) {
+                        logger.warn("frequency "+freq+ " is not multiple of interval: "+itv+ " at metric : "+node);
+                        return;
+                    }
+                    int n=freq/itv;
                 /* Noticed expected and received samples never match. I think we should check for whether received samples
                  * is the multiple of expected samples? Commenting here to move forward.
                 if(n != metricSet.getValues().size()){
@@ -639,26 +657,26 @@ public class MetricsReceiver implements StatsListReceiver,
                     return;
                 }
                 */
-                if(rollup.equals("average")) {
-                    sendMetricsAverage(node,metricSet,n);
-                } else if(rollup.equals("latest")) {
-                    sendMetricsLatest(node,metricSet);
-                } else if(rollup.equals("maximum")) {
-                    sendMetricsMaximum(node,metricSet);
-                } else if(rollup.equals("minimum")) {
-                    sendMetricsMinimim(node,metricSet);
-                } else if(rollup.equals("summation")) {
-                    sendMetricsSummation(node,metricSet);
+                    if(rollup.equals("average")) {
+                        sendMetricsAverage(node,metricSet,n);
+                    } else if(rollup.equals("latest")) {
+                        sendMetricsLatest(node,metricSet);
+                    } else if(rollup.equals("maximum")) {
+                        sendMetricsMaximum(node,metricSet);
+                    } else if(rollup.equals("minimum")) {
+                        sendMetricsMinimim(node,metricSet);
+                    } else if(rollup.equals("summation")) {
+                        sendMetricsSummation(node,metricSet);
+                    } else {
+                        logger.info("Not supported Rollup agration:"+rollup);
+                    }
                 } else {
-                    logger.info("Not supported Rollup agration:"+rollup);
+                    logger.debug("all samples");
+                    sendAllMetrics(node,metricSet);
                 }
             } else {
-                logger.debug("all samples");
-                sendAllMetrics(node,metricSet);
+                logger.debug("MetricsReceiver MetricSet is NULL");
             }
-        } else {
-            logger.debug("MetricsReceiver MetricSet is NULL");
-        }
         } catch(Exception e){
             logger.fatal("Unexpected error occurred during metrics collection.", e);
         }
@@ -673,8 +691,8 @@ public class MetricsReceiver implements StatsListReceiver,
             isResetConn = false;
         }catch(Exception e){
             logger.fatal("Failed to Establish Graphite Server connection: " +
-                             this.props.getProperty("host") + "\t" +
-                             Integer.parseInt(this.props.getProperty("port", "2003")));
+                    this.props.getProperty("host") + "\t" +
+                    Integer.parseInt(this.props.getProperty("port", "2003")));
             System.exit(-1);
         }
     }

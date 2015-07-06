@@ -70,6 +70,10 @@
                     <name>use_fqdn</name>
                     <value>false</value>
                 </property>
+                <property>
+                    <name>place_rollup_in_the_end</name>
+                    <value>true</value>
+                </property>
 
                 <!--
                     if "use_entity_type_prefix" is set to true the receiver will prepend the type
