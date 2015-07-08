@@ -550,7 +550,11 @@ public class MetricsReceiver implements StatsListReceiver,
 
                 if((metricSet.getEntityName().contains("VirtualMachine") == true) ||
                         (metricSet.getEntityName().contains("HostSystem") == true)){
-                    String myEntityName = metricSet.getEntityName().replace("[vCenter]", "").replace("[VirtualMachine]", "").replace("[HostSystem]", "");
+
+
+                    //String myEntityName = metricSet.getEntityName().replace("[vCenter]", "").replace("[VirtualMachine]", "").replace("[HostSystem]", "");
+                    String myEntityName = ret.parseEntityName(entityName);
+
                     if(myEntityName == null || myEntityName.equals("")){
                         logger.warn("Received Invalid Managed Entity. Failed to Continue.");
                         return;
