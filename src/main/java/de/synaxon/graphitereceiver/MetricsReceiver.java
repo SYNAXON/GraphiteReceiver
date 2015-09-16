@@ -10,6 +10,7 @@ import com.vmware.ee.statsfeeder.StatsListReceiver;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
@@ -28,8 +29,7 @@ import java.util.TimeZone;
 /**
  * @author karl spies
  */
-public class MetricsReceiver implements StatsListReceiver,
-        StatsFeederListener, StatsExecutionContextAware {
+public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, StatsExecutionContextAware {
 
     Log logger = LogFactory.getLog(MetricsReceiver.class);
     private boolean debugLogLevel = logger.isDebugEnabled();
@@ -58,7 +58,10 @@ public class MetricsReceiver implements StatsListReceiver,
     private int cacheRefreshInterval = -1;
     private Date cacheRefreshStartTime = null;
 
+    private Boolean isHostMap;
     private boolean place_rollup_in_the_end;
+
+    private Map<String, MapPrefixSuffix> hostMap;
     /**
      * This constructor will be called by StatsFeeder to load this receiver. The props object passed is built
      * from the content in the XML configuration for the receiver.
@@ -165,29 +168,23 @@ public class MetricsReceiver implements StatsListReceiver,
             logger.debug("cluster_map_refresh_timeout is set to < 1 will not be supported: ");
             this.cacheRefreshInterval = -1;
         }
-    }
 
-    /**
-     * getCluster returns associated cluster to the calling method. If requested VM/ESX managed entity does not exist in the cache,
-     * it refreshes the cache.
-     *
-     * Potential Bottlenecks: If too many new VirtualMachines/ESX hosts added during runtime (between cache refresh intervals - this.cacheRefreshInterval)
-     *                        may affect the performance because of too many vCenter connections and cache refreshments. We have tested & verified
-     */
-    private String getCluster(String entity){
-        try{
-            String value = (String)this.clusterMap.get(entity);
-            if(value == null){
-                logger.warn("Cluster Not Found for Managed Entity " + entity);
-                logger.warn("Reinitializing Cluster Entity Map");
-                Utils.initClusterHostMap(null, null, this.context, this.clusterMap);
-                value = (String)this.clusterMap.get(entity);
+        this.isHostMap = Boolean.valueOf(this.props.getProperty("use_alternate_prefix_sufix_for_vm"));
+
+        if(this.isHostMap) {
+            String hostMapPath = this.props.getProperty("alternate_vm_prefix_sufix_map_file");
+            if (hostMapPath != null && !hostMapPath.equals("")) {
+                try {
+                    MapperPrefixSuffix mapperPrefixSuffix = new MapperPrefixSuffix(hostMapPath);
+                    this.hostMap = mapperPrefixSuffix.getAllMapper();
+                } catch (FileNotFoundException e) {
+                    e.printStackTrace();
+                }
             }
-            return value;
-        }catch(Exception e){
-            return null;
         }
     }
+
+
 
     private void sendAllMetrics(String node,PerfMetricSet metricSet){
         final DateFormat SDF = new SimpleDateFormat(
@@ -366,26 +363,6 @@ public class MetricsReceiver implements StatsListReceiver,
         }
     }
 
-    private String[] splitCounterName(String counterName) {
-        //should split string in a 3 componet array
-        // [0] = groupName
-        // [1] = metricName
-        // [2] = rollup
-        String[] result=new String[3];
-        String[] tmp=counterName.split("[.]");
-        //group Name
-        result[0]=tmp[0];
-        //rollup
-        result[2]=tmp[tmp.length-1];
-        result[1]=tmp[1];
-        if ( tmp.length > 3){
-            for(int i=2;i<tmp.length-1;++i) {
-                result[1]=result[1]+"."+tmp[i];
-            }
-        }
-        return result;
-    }
-
     /**
      * Main receiver entry point. This will be called for each entity and each metric which were retrieved by
      * StatsFeeder.
@@ -425,7 +402,7 @@ public class MetricsReceiver implements StatsListReceiver,
                         return;
                     }
                     myEntityName = myEntityName.replace(" ", "_");
-                    cluster = this.getCluster(myEntityName);
+                    cluster = Utils.getCluster(myEntityName, this.context, this.clusterMap);
                     if(cluster == null || cluster.equals("")){
                         logger.warn("Cluster Not Found for Entity " + myEntityName);
                         return;
@@ -447,10 +424,11 @@ public class MetricsReceiver implements StatsListReceiver,
                 int interval=metricSet.getInterval();
 
                 String rollup;
-
+                String hostName = null;
                 if(use_entity_type_prefix) {
                     if(entityName.contains("[VirtualMachine]")) {
-                        eName="vm."+ret.parseEntityName(entityName).replace('.', '_');
+                        hostName = ret.parseEntityName(entityName).replace('.', '_');
+                        eName="vm."+hostName;
                     }else if (entityName.contains("[HostSystem]")) {
                         //for ESX only hostname
                         if(!use_fqdn) {
@@ -487,30 +465,24 @@ public class MetricsReceiver implements StatsListReceiver,
                 // from "xxxx.yyyyyy.xxxxx" on the metricName
                 cluster = cluster.replace(".", "_");
 
-                String[] counterInfo = splitCounterName(counterName);
+                String[] counterInfo = Utils.splitCounterName(counterName);
                 String groupName = counterInfo[0];
                 String metricName = counterInfo[1];
                 rollup = counterInfo[2];
 
-                StringBuilder nodeBuilder = new StringBuilder();
-                nodeBuilder.append(graphite_prefix).append(".");
-                nodeBuilder.append((cluster == null || ("".equals(cluster))) ? "" : cluster + ".");
-                nodeBuilder.append(eName).append(".");
-                nodeBuilder.append(groupName).append(".");
-                nodeBuilder.append((instanceName == null || ("".equals(instanceName))) ? "" : instanceName + ".");
-                nodeBuilder.append(metricName).append("_");
-                if(place_rollup_in_the_end){
-                    nodeBuilder.append(statType).append("_");
-                    nodeBuilder.append(rollup);
-                } else {
-                    nodeBuilder.append(rollup).append("_");
-                    nodeBuilder.append(statType);
-                }
-                logger.debug((instanceName == null || ("".equals(instanceName))) ?
-                                new StringBuilder("GP :").append(graphite_prefix).append(" EN: ").append(eName).append(" CN: ").append(counterName).append(" ST: ").append(statType).toString():
-                                new StringBuilder("GP :").append(graphite_prefix).append(" EN: ").append(eName).append(" GN :").append(groupName).append(" IN :").append(instanceName).append(" MN :").append(metricName).append(" ST: ").append(statType).append(" RU: ").append(rollup).toString()
-                );
-                node = nodeBuilder.toString();
+                Map<String,String> graphiteTree = new HashMap<String, String>();
+                graphiteTree.put("graphite_prefix", graphite_prefix);
+                graphiteTree.put("cluster", cluster);
+                graphiteTree.put("eName", eName);
+                graphiteTree.put("groupName", groupName);
+                graphiteTree.put("instanceName", instanceName);
+                graphiteTree.put("metricName", metricName);
+                graphiteTree.put("statType", statType);
+                graphiteTree.put("rollup", rollup);
+                graphiteTree.put("counterName", counterName);
+                graphiteTree.put("hostName", hostName);
+                node = Utils.getNode(graphiteTree, place_rollup_in_the_end, this.isHostMap, this.hostMap);
+
                 metricsCount += metricSet.size();
                 if(only_one_sample_x_period) {
                     logger.debug("one sample x period");

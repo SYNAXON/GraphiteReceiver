@@ -22,6 +22,47 @@ public class Utils {
 
     private static Log logger = LogFactory.getLog(Utils.class);
 
+    public static String[] splitCounterName(String counterName) {
+        //should split string in a 3 componet array
+        // [0] = groupName
+        // [1] = metricName
+        // [2] = rollup
+        String[] result=new String[3];
+        String[] tmp=counterName.split("[.]");
+        //group Name
+        result[0]=tmp[0];
+        //rollup
+        result[2]=tmp[tmp.length-1];
+        result[1]=tmp[1];
+        if ( tmp.length > 3){
+            for(int i=2;i<tmp.length-1;++i) {
+                result[1]=result[1]+"."+tmp[i];
+            }
+        }
+        return result;
+    }
+
+    /**
+     * getCluster returns associated cluster to the calling method. If requested VM/ESX managed entity does not exist in the cache,
+     * it refreshes the cache.
+     *
+     * Potential Bottlenecks: If too many new VirtualMachines/ESX hosts added during runtime (between cache refresh intervals - this.cacheRefreshInterval)
+     *                        may affect the performance because of too many vCenter connections and cache refreshments. We have tested & verified
+     */
+    public static String getCluster(String entity, ExecutionContext context, Map clusterMap){
+        try{
+            String value = String.valueOf(clusterMap.get(entity));
+            if(value == null){
+                logger.warn("Cluster Not Found for Managed Entity " + entity);
+                logger.warn("Reinitializing Cluster Entity Map");
+                Utils.initClusterHostMap(null, null, context, clusterMap);
+                value = String.valueOf(clusterMap.get(entity));
+            }
+            return value;
+        }catch(Exception e){
+            return null;
+        }
+    }
     /**
      * initClusterHostMap is a self recursive method for generating VM/ESX to Cluster Hash Map.
      * In the first iteration it gathers all clusters and in consecutive calls for each cluster it updates Hash Map.
@@ -129,7 +170,7 @@ public class Utils {
                         clusterMap.put(entityName, cluster);
                     }
                     if(ClusterName == null){
-                        initClusterHostMap((String)(dps.get(0).getVal()), oc.getObj(), context, clusterMap);
+                        initClusterHostMap((String) (dps.get(0).getVal()), oc.getObj(), context, clusterMap);
                     }
                 }
                 if (token == null) break;
@@ -143,4 +184,59 @@ public class Utils {
             return false;
         }
     } // initClusterHostMap
+
+
+    public static String getNode(Map<String,String> graphiteTree, Boolean place_rollup_in_the_end, Boolean isHostMap, Map<String, MapPrefixSuffix> hostMap) {
+        String graphite_prefix = graphiteTree.get("graphite_prefix");
+        String cluster = graphiteTree.get("cluster");
+        String eName = graphiteTree.get("eName");
+        String groupName = graphiteTree.get("groupName");
+        String instanceName = graphiteTree.get("instanceName");
+        String metricName = graphiteTree.get("metricName");
+        String statType = graphiteTree.get("statType");
+        String rollup = graphiteTree.get("rollup");
+        String counterName = graphiteTree.get("counterName");
+
+        String hostName = graphiteTree.get("hostName");
+
+        StringBuilder nodeBuilder = new StringBuilder();
+        if((isHostMap && hostMap.size() > 0) && (hostName != null && !hostName.equals(""))) {
+            MapPrefixSuffix mapPrefixSuffix = hostMap.get(hostName);
+
+            String filePrefix = null ;
+            String fileSufix = null;
+            if(mapPrefixSuffix != null) {
+                filePrefix = mapPrefixSuffix.getPrefix();
+                fileSufix = mapPrefixSuffix.getSufix();
+            }
+            if(filePrefix != null && fileSufix != null) {
+                nodeBuilder.append(filePrefix).append(".");
+                nodeBuilder.append(hostName).append(".");
+                nodeBuilder.append(fileSufix).append(".");
+            } else {
+                nodeBuilder.append(graphite_prefix).append(".");
+                nodeBuilder.append((cluster == null || ("".equals(cluster))) ? "" : cluster + ".");
+                nodeBuilder.append(eName).append(".");
+            }
+        } else {
+            nodeBuilder.append(graphite_prefix).append(".");
+            nodeBuilder.append((cluster == null || ("".equals(cluster))) ? "" : cluster + ".");
+            nodeBuilder.append(eName).append(".");
+        }
+        nodeBuilder.append(groupName).append(".");
+        nodeBuilder.append((instanceName == null || ("".equals(instanceName))) ? "" : instanceName + ".");
+        nodeBuilder.append(metricName).append("_");
+        if(place_rollup_in_the_end){
+            nodeBuilder.append(statType).append("_");
+            nodeBuilder.append(rollup);
+        } else {
+            nodeBuilder.append(rollup).append("_");
+            nodeBuilder.append(statType);
+        }
+        logger.debug((instanceName == null || ("".equals(instanceName))) ?
+                        new StringBuilder("GP :").append(graphite_prefix).append(" EN: ").append(eName).append(" CN: ").append(counterName).append(" ST: ").append(statType).toString():
+                        new StringBuilder("GP :").append(graphite_prefix).append(" EN: ").append(eName).append(" GN :").append(groupName).append(" IN :").append(instanceName).append(" MN :").append(metricName).append(" ST: ").append(statType).append(" RU: ").append(rollup).toString()
+        );
+        return nodeBuilder.toString();
+    }
 }

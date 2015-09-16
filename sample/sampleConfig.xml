@@ -62,7 +62,7 @@
                     <name>cluster_map_refresh_timeout</name>
                     <value>3600</value>
                 </property>
-		            <property>
+                <property>
                     <name>prefix</name>
                     <value>esxprefix</value>
                 </property>
@@ -73,6 +73,14 @@
                 <property>
                     <name>place_rollup_in_the_end</name>
                     <value>true</value>
+                </property>
+                <property>
+                    <name>use_alternate_prefix_sufix_for_vm</name>
+                    <value>true</value>
+                </property>
+                <property>
+                    <name>alternate_vm_prefix_sufix_map_file</name>
+                    <value>./hostname.map</value>
                 </property>
 
                 <!--
