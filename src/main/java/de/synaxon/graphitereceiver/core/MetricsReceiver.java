@@ -1,4 +1,4 @@
-package de.synaxon.graphitereceiver;
+package de.synaxon.graphitereceiver.core;
 
 import com.vmware.ee.statsfeeder.ExecutionContext;
 import com.vmware.ee.statsfeeder.MOREFRetriever;
@@ -7,6 +7,9 @@ import com.vmware.ee.statsfeeder.PerfMetricSet.PerfMetric;
 import com.vmware.ee.statsfeeder.StatsExecutionContextAware;
 import com.vmware.ee.statsfeeder.StatsFeederListener;
 import com.vmware.ee.statsfeeder.StatsListReceiver;
+import de.synaxon.graphitereceiver.domain.MapPrefixSuffix;
+import de.synaxon.graphitereceiver.utils.MapperPrefixSuffix;
+import de.synaxon.graphitereceiver.utils.Utils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -18,7 +21,6 @@ import java.net.Socket;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -31,37 +33,37 @@ import java.util.TimeZone;
  */
 public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, StatsExecutionContextAware {
 
-    Log logger = LogFactory.getLog(MetricsReceiver.class);
-    private boolean debugLogLevel = logger.isDebugEnabled();
+    private Log logger;
+    private boolean debugLogLevel;
 
-    private String name = "SampleStatsReceiver";
-    private String graphite_prefix = "vmware";
-    //set to true for backwards compatibility
-    private Boolean use_fqdn = true;
-    //set to true for backwards compatibility
-    private Boolean use_entity_type_prefix = false;
-    private Boolean only_one_sample_x_period=true;
-
-    private ExecutionContext context;
-    private Socket client;
-    PrintWriter out;
+    private String name;
     private Properties props;
-    private int freq;
-    private MOREFRetriever ret;
-
-    private int disconnectCounter = 0;
-    private int disconnectAfter = -1;
-    private boolean isResetConn = false;
-    private long metricsCount = 0;
-    private boolean isClusterHostMapInitialized = false;
-    private Map clusterMap = Collections.EMPTY_MAP;
-    private int cacheRefreshInterval = -1;
-    private Date cacheRefreshStartTime = null;
-
-    private Boolean isHostMap;
+    private ExecutionContext context;
+    //set to true for backwards compatibility
+    private boolean use_fqdn;
+    //set to true for backwards compatibility
+    private boolean use_entity_type_prefix;
+    private boolean only_one_sample_x_period;
     private boolean place_rollup_in_the_end;
 
+    private int disconnectCounter;
+    private int disconnectAfter;
+    private int cacheRefreshInterval;
+    private boolean isHostMap;
     private Map<String, MapPrefixSuffix> hostMap;
+    private Map<String,String> clusterMap = new HashMap<String, String>();
+
+    private Socket client;
+    private PrintWriter out;
+
+    private boolean isResetConn;
+    private long metricsCount;
+
+    private boolean isClusterHostMapInitialized;
+
+    private Date cacheRefreshStartTime;
+
+
     /**
      * This constructor will be called by StatsFeeder to load this receiver. The props object passed is built
      * from the content in the XML configuration for the receiver.
@@ -86,8 +88,15 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
      * @param props properties
      */
     public MetricsReceiver(String name, Properties props) {
-        this.name = name;
+        this. logger = LogFactory.getLog(MetricsReceiver.class);
+        this.debugLogLevel = logger.isDebugEnabled();
+        if(name == null) {
+            this.name = "SampleStatsReceiver";
+        } else {
+            this.name = name;
+        }
         this.props = props;
+        this.disconnectCounter = 0;
         logger.debug("MetricsReceiver Constructor.");
     }
 
@@ -112,31 +121,31 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
     public void setExecutionContext(ExecutionContext context) {
 
         logger.debug("MetricsReceiver in setExecutionContext.");
+
         this.context = context;
-        this.ret=context.getMorefRetriever();
-        this.freq=context.getConfiguration().getFrequencyInSeconds();
 
-        String prefix=this.props.getProperty("prefix");
-        String use_fqdn=this.props.getProperty("use_fqdn");
-        String use_entity_type_prefix=this.props.getProperty("use_entity_type_prefix");
-        String only_one_sample_x_period=this.props.getProperty("only_one_sample_x_period");
+        if(this.props.getProperty("prefix") == null || this.props.getProperty("prefix").isEmpty()) {
+            this.props.setProperty("prefix", "vmware");
+        }
 
-        if(prefix != null && !prefix.isEmpty())
-            this.graphite_prefix=prefix;
+        if(this.props.getProperty("use_fqdn") != null && !this.props.getProperty("use_fqdn").isEmpty()) {
+            this.use_fqdn = Boolean.valueOf(this.props.getProperty("use_fqdn"));
+        } else {
+            this.use_fqdn= true;
+        }
 
-        if(use_fqdn != null && !use_fqdn.isEmpty())
-            this.use_fqdn=Boolean.valueOf(use_fqdn);
+        if(this.props.getProperty("use_entity_type_prefix") != null && !this.props.getProperty("use_entity_type_prefix").isEmpty()) {
+            this.use_entity_type_prefix = Boolean.valueOf(this.props.getProperty("use_entity_type_prefix"));
+        }
 
-        if(use_entity_type_prefix != null && !use_entity_type_prefix.isEmpty())
-            this.use_entity_type_prefix=Boolean.valueOf(use_entity_type_prefix);
-
-        if(only_one_sample_x_period!= null && !only_one_sample_x_period.isEmpty())
-            this.only_one_sample_x_period=Boolean.valueOf(only_one_sample_x_period);
+        if(this.props.getProperty("only_one_sample_x_period")!= null && !this.props.getProperty("only_one_sample_x_period").isEmpty()) {
+            this.only_one_sample_x_period = Boolean.valueOf(this.props.getProperty("only_one_sample_x_period"));
+        } else {
+            this.only_one_sample_x_period = true;
+        }
 
         if(this.props.getProperty("place_rollup_in_the_end") != null && !this.props.getProperty("place_rollup_in_the_end").isEmpty()) {
             this.place_rollup_in_the_end = Boolean.valueOf(this.props.getProperty("place_rollup_in_the_end"));
-        } else {
-            this.place_rollup_in_the_end = false;
         }
 
         try{
@@ -153,8 +162,6 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
             this.disconnectAfter = -1;
         }
 
-        this.clusterMap = new HashMap();
-
         try{
             this.cacheRefreshInterval = Integer.parseInt(this.props.getProperty("cluster_map_refresh_timeout"));
             if(this.cacheRefreshInterval < 1){
@@ -169,7 +176,9 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
             this.cacheRefreshInterval = -1;
         }
 
-        this.isHostMap = Boolean.valueOf(this.props.getProperty("use_alternate_prefix_sufix_for_vm"));
+        if(this.props.getProperty("use_alternate_prefix_sufix_for_vm") != null && !this.props.getProperty("use_alternate_prefix_sufix_for_vm").isEmpty()) {
+            this.isHostMap = Boolean.valueOf(this.props.getProperty("use_alternate_prefix_sufix_for_vm"));
+        }
 
         if(this.isHostMap) {
             String hostMapPath = this.props.getProperty("alternate_vm_prefix_sufix_map_file");
@@ -375,6 +384,9 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
      */
     @Override
     public synchronized void receiveStats(String entityName, PerfMetricSet metricSet) {
+        MOREFRetriever morefRetriever = this.context.getMorefRetriever();
+        Integer frequencyInSeconds = this.context.getConfiguration().getFrequencyInSeconds();
+
         try {
             logger.debug("MetricsReceiver in receiveStats");
 
@@ -395,7 +407,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                 if((metricSet.getEntityName().contains("VirtualMachine")) ||
                         (metricSet.getEntityName().contains("HostSystem"))){
 
-                    String myEntityName = ret.parseEntityName(metricSet.getEntityName());
+                    String myEntityName = morefRetriever.parseEntityName(metricSet.getEntityName());
 
                     if(myEntityName.equals("")){
                         logger.warn("Received Invalid Managed Entity. Failed to Continue.");
@@ -427,31 +439,33 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                 String hostName = null;
                 if(use_entity_type_prefix) {
                     if(entityName.contains("[VirtualMachine]")) {
-                        hostName = ret.parseEntityName(entityName).replace('.', '_');
+                        hostName = morefRetriever.parseEntityName(entityName).replace('.', '_');
                         eName="vm."+hostName;
                     }else if (entityName.contains("[HostSystem]")) {
                         //for ESX only hostname
                         if(!use_fqdn) {
-                            eName="esx."+ret.parseEntityName(entityName).split("[.]",2)[0];
+                            eName="esx." + morefRetriever.parseEntityName(entityName).split("[.]",2)[0];
                         }else {
-                            eName="esx."+ret.parseEntityName(entityName).replace('.', '_');
+                            eName="esx." + morefRetriever.parseEntityName(entityName).replace('.', '_');
                         }
                     }else if (entityName.contains("[Datastore]")) {
-                        eName="dts."+ret.parseEntityName(entityName).replace('.', '_');
+                        eName="dts." + morefRetriever.parseEntityName(entityName).replace('.', '_');
                     }else if (entityName.contains("[ResourcePool]")) {
-                        eName="rp."+ret.parseEntityName(entityName).replace('.', '_');
+                        eName="rp." + morefRetriever.parseEntityName(entityName).replace('.', '_');
                     }
 
                 } else {
-                    eName=ret.parseEntityName(entityName);
+                    eName = morefRetriever.parseEntityName(entityName);
 
                     if(!use_fqdn && entityName.contains("[HostSystem]")){
                         eName=eName.split("[.]",2)[0];
                     }
                     eName=eName.replace('.', '_');
                 }
-                eName=eName.replace(' ','_').replace('-','_');
-                logger.debug("Container Name :" +ret.getContainerName(eName) + " Interval: "+Integer.toString(interval)+ " Frequency :"+Integer.toString(freq));
+                if(eName != null) {
+                    eName = eName.replace(' ', '_').replace('-', '_');
+                }
+                logger.debug("Container Name :" + morefRetriever.getContainerName(eName) + " Interval: "+Integer.toString(interval)+ " Frequency :"+Integer.toString(frequencyInSeconds));
 
                 /*
                     Finally node contains these fields (depending on properties)
@@ -463,7 +477,9 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                  */
                 //Get group name (xxxx) metric name (yyyy) and rollup (zzzz)
                 // from "xxxx.yyyyyy.xxxxx" on the metricName
-                cluster = cluster.replace(".", "_");
+                if(cluster != null) {
+                    cluster = cluster.replace(".", "_");
+                }
 
                 String[] counterInfo = Utils.splitCounterName(counterName);
                 String groupName = counterInfo[0];
@@ -471,7 +487,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                 rollup = counterInfo[2];
 
                 Map<String,String> graphiteTree = new HashMap<String, String>();
-                graphiteTree.put("graphite_prefix", graphite_prefix);
+                graphiteTree.put("graphite_prefix", this.props.getProperty("prefix"));
                 graphiteTree.put("cluster", cluster);
                 graphiteTree.put("eName", eName);
                 graphiteTree.put("groupName", groupName);
@@ -488,11 +504,10 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                     logger.debug("one sample x period");
                     //check if metricSet has the expected number of metrics
                     int itv=metricSet.getInterval();
-                    if(freq % itv != 0) {
-                        logger.warn("frequency "+freq+ " is not multiple of interval: "+itv+ " at metric : "+node);
+                    if(frequencyInSeconds % itv != 0) {
+                        logger.warn("frequency " + frequencyInSeconds + " is not multiple of interval: " + itv + " at metric : " + node);
                         return;
                     }
-                    int n=freq/itv;
                 /* Noticed expected and received samples never match. I think we should check for whether received samples
                  * is the multiple of expected samples? Commenting here to move forward.
                 if(n != metricSet.getValues().size()){
@@ -501,7 +516,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                 }
                 */
                     if(rollup.equals("average")) {
-                        sendMetricsAverage(node,metricSet,n);
+                        sendMetricsAverage(node,metricSet,frequencyInSeconds/itv);
                     } else if(rollup.equals("latest")) {
                         sendMetricsLatest(node,metricSet);
                     } else if(rollup.equals("maximum")) {
@@ -550,7 +565,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
             logger.debug("onStartRetrieval - Graphite Host and Port: " + this.props.getProperty("host") + "\t" + this.props.getProperty("port"));
             this.disconnectCounter = 0;
 
-            if(isResetConn != true){
+            if(!isResetConn){
                 metricsCount = 0;
                 if(this.cacheRefreshStartTime != null){
                     Date cacheRefreshEndTime = new Date();
@@ -581,7 +596,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
     public void onEndRetrieval() {
         try {
             logger.debug("MetricsReceiver onEndRetrieval.");
-            if(isResetConn != true){
+            if(!isResetConn){
                 logger.info("onEndRetrieval PerformanceMetricsCountForEachRun: " + metricsCount);
             }
 

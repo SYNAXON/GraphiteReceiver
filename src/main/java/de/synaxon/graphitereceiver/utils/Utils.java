@@ -1,4 +1,4 @@
-package de.synaxon.graphitereceiver;
+package de.synaxon.graphitereceiver.utils;
 
 import com.vmware.ee.common.VimConnection;
 import com.vmware.ee.statsfeeder.ExecutionContext;
@@ -11,6 +11,7 @@ import com.vmware.vim25.PropertySpec;
 import com.vmware.vim25.RetrieveOptions;
 import com.vmware.vim25.RetrieveResult;
 import com.vmware.vim25.TraversalSpec;
+import de.synaxon.graphitereceiver.domain.MapPrefixSuffix;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -49,7 +50,7 @@ public class Utils {
      * Potential Bottlenecks: If too many new VirtualMachines/ESX hosts added during runtime (between cache refresh intervals - this.cacheRefreshInterval)
      *                        may affect the performance because of too many vCenter connections and cache refreshments. We have tested & verified
      */
-    public static String getCluster(String entity, ExecutionContext context, Map clusterMap){
+    public static String getCluster(String entity, ExecutionContext context, Map<String,String> clusterMap){
         try{
             String value = String.valueOf(clusterMap.get(entity));
             if(value == null){
@@ -70,7 +71,7 @@ public class Utils {
      * As part of configurations, GraphiteReceiver invokes this method at regular intervals (configured) and during runtime
      * if VM/ESX does not exist in the hash map.
      */
-    public static boolean initClusterHostMap(String ClusterName, ManagedObjectReference ClusterMor, ExecutionContext context, Map clusterMap){
+    public static boolean initClusterHostMap(String ClusterName, ManagedObjectReference ClusterMor, ExecutionContext context, Map<String,String> clusterMap){
         try {
             logger.debug("initClusterHostMap Begin");
 
@@ -234,9 +235,8 @@ public class Utils {
             nodeBuilder.append(statType);
         }
         logger.debug((instanceName == null || ("".equals(instanceName))) ?
-                        new StringBuilder("GP :").append(graphite_prefix).append(" EN: ").append(eName).append(" CN: ").append(counterName).append(" ST: ").append(statType).toString():
-                        new StringBuilder("GP :").append(graphite_prefix).append(" EN: ").append(eName).append(" GN :").append(groupName).append(" IN :").append(instanceName).append(" MN :").append(metricName).append(" ST: ").append(statType).append(" RU: ").append(rollup).toString()
+                        "GP :" + graphite_prefix + " EN: " + eName + " CN: " + counterName + " ST: " + statType :
+                        "GP :" + graphite_prefix + " EN: " + eName + " GN :" + groupName + " IN :" + instanceName + " MN :" + metricName + " ST: " + statType + " RU: " + rollup
         );
-        return nodeBuilder.toString();
-    }
+        return nodeBuilder.toString();    }
 }

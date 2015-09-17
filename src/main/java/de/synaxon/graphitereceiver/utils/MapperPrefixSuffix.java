@@ -1,5 +1,6 @@
-package de.synaxon.graphitereceiver;
+package de.synaxon.graphitereceiver.utils;
 
+import de.synaxon.graphitereceiver.domain.MapPrefixSuffix;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -8,20 +9,15 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Created by Alberto Pascual on 16/09/15.
- */
 public class MapperPrefixSuffix {
 
     private File hostnameMap;
-    private final String separator = ";";
-    Log logger = LogFactory.getLog(MapperPrefixSuffix.class);
 
     public MapperPrefixSuffix(String path) throws FileNotFoundException {
+        Log logger = LogFactory.getLog(MapperPrefixSuffix.class);
         logger.warn("hostname map no exist or is empty");
         this.hostnameMap = new File(path);
         if(this.hostnameMap.exists()) {
@@ -35,13 +31,14 @@ public class MapperPrefixSuffix {
     }
 
     public Map<String, MapPrefixSuffix> getAllMapper(){
+        String separator = ";";
         Map<String, MapPrefixSuffix> hostMap = new HashMap<String, MapPrefixSuffix>();
         BufferedReader bufferedReader = bufferedReaderFactory();
         String line;
         try {
             while((line = bufferedReader.readLine()) != null) {
                 if(!line.startsWith("#")) {
-                    String[] lineFound = line.split(this.separator);
+                    String[] lineFound = line.split(separator);
                     MapPrefixSuffix mapPrefixSuffix = new MapPrefixSuffix(lineFound[1], lineFound[2]);
                     hostMap.put(lineFound[0], mapPrefixSuffix);
                 }
@@ -52,40 +49,9 @@ public class MapperPrefixSuffix {
 
         return hostMap;
     }
-    public Map<String, MapPrefixSuffix> mapHostname(String hostname){
-        BufferedReader bufferedReader = bufferedReaderFactory();
-        String line;
-        Boolean found = false;
-        Map<String, MapPrefixSuffix> hostMap = new HashMap<String, MapPrefixSuffix>();
-        try {
-
-            while((line = bufferedReader.readLine()) != null && !found) {
-                if(!line.startsWith("#") && line.contains(hostname) && line.contains(this.separator)) {
-                    String[] lineFound = line.split(this.separator);
-                    MapPrefixSuffix mapPrefixSuffix;
-                    for(String split: Arrays.asList(lineFound)){
-                        if(split.equals(hostname)){
-                            mapPrefixSuffix = new MapPrefixSuffix(lineFound[1], lineFound[2]);
-                            hostMap.put(lineFound[0], mapPrefixSuffix);
-                            found = true;
-                        }
-                    }
-                }
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        if(found) {
-            return hostMap;
-        } else {
-            return null;
-        }
-    }
-
-
 
     private BufferedReader bufferedReaderFactory(){
-        FileReader fileReader = null;
+        FileReader fileReader;
         BufferedReader bufferedReader = null;
 
         try {
