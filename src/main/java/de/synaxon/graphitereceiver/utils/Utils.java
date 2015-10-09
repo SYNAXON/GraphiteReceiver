@@ -79,6 +79,7 @@ public class Utils {
 
             ManagedObjectReference viewMgrRef = connection.getViewManager();
             ManagedObjectReference propColl = connection.getPropertyCollector();
+
             List<String> clusterList = new ArrayList<String>();
             clusterList.add("ComputeResource");
             clusterList.add("HostSystem");
@@ -188,6 +189,7 @@ public class Utils {
 
 
     public static String getNode(Map<String,String> graphiteTree, Boolean place_rollup_in_the_end, Boolean isHostMap, Map<String, MapPrefixSuffix> hostMap) {
+
         String graphite_prefix = graphiteTree.get("graphite_prefix");
         String cluster = graphiteTree.get("cluster");
         String eName = graphiteTree.get("eName");
@@ -201,6 +203,9 @@ public class Utils {
         String hostName = graphiteTree.get("hostName");
 
         StringBuilder nodeBuilder = new StringBuilder();
+        if ("null".equals(cluster)) {
+            logger.warn("The cluster is null (String)");
+        }
         if((isHostMap && hostMap.size() > 0) && (hostName != null && !hostName.equals(""))) {
             MapPrefixSuffix mapPrefixSuffix = hostMap.get(hostName);
 
@@ -221,7 +226,7 @@ public class Utils {
             }
         } else {
             nodeBuilder.append(graphite_prefix).append(".");
-            nodeBuilder.append((cluster == null || ("".equals(cluster))) ? "" : cluster + ".");
+            nodeBuilder.append((cluster == null || ("".equals(cluster) || ("null".equals(cluster)))) ? "" : cluster + ".");
             nodeBuilder.append(eName).append(".");
         }
         nodeBuilder.append(groupName).append(".");
@@ -238,5 +243,12 @@ public class Utils {
                         "GP :" + graphite_prefix + " EN: " + eName + " CN: " + counterName + " ST: " + statType :
                         "GP :" + graphite_prefix + " EN: " + eName + " GN :" + groupName + " IN :" + instanceName + " MN :" + metricName + " ST: " + statType + " RU: " + rollup
         );
-        return nodeBuilder.toString();    }
+
+        if (cluster == null || "".equals(cluster) || "null".equals(cluster)) {
+            logger.debug("The cluster is null - " + eName);
+            return null;
+        }
+        return nodeBuilder.toString();
+    }
+
 }

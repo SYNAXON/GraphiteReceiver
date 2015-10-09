@@ -13,6 +13,7 @@ import de.synaxon.graphitereceiver.utils.Utils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -98,8 +99,10 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
         this.props = props;
         this.disconnectCounter = 0;
         logger.debug("MetricsReceiver Constructor.");
-    }
 
+        File test = new File(".");
+        logger.info("ALBERTO FILE PATH " + test.getAbsolutePath());
+    }
     /**
      *
      * @return receiver name
@@ -119,7 +122,6 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
      */
     @Override
     public void setExecutionContext(ExecutionContext context) {
-
         logger.debug("MetricsReceiver in setExecutionContext.");
 
         this.context = context;
@@ -192,7 +194,6 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
             }
         }
     }
-
 
 
     private void sendAllMetrics(String node,PerfMetricSet metricSet){
@@ -384,6 +385,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
      */
     @Override
     public synchronized void receiveStats(String entityName, PerfMetricSet metricSet) {
+
         MOREFRetriever morefRetriever = this.context.getMorefRetriever();
         Integer frequencyInSeconds = this.context.getConfiguration().getFrequencyInSeconds();
 
@@ -404,8 +406,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                 String node;
                 String cluster = null;
 
-                if((metricSet.getEntityName().contains("VirtualMachine")) ||
-                        (metricSet.getEntityName().contains("HostSystem"))){
+                if((metricSet.getEntityName().contains("VirtualMachine")) || (metricSet.getEntityName().contains("HostSystem"))){
 
                     String myEntityName = morefRetriever.parseEntityName(metricSet.getEntityName());
 
@@ -440,7 +441,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                 if(use_entity_type_prefix) {
                     if(entityName.contains("[VirtualMachine]")) {
                         hostName = morefRetriever.parseEntityName(entityName).replace('.', '_');
-                        eName="vm."+hostName;
+                        eName="vm." + hostName;
                     }else if (entityName.contains("[HostSystem]")) {
                         //for ESX only hostname
                         if(!use_fqdn) {
@@ -515,22 +516,26 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                     return;
                 }
                 */
-                    if(rollup.equals("average")) {
-                        sendMetricsAverage(node,metricSet,frequencyInSeconds/itv);
-                    } else if(rollup.equals("latest")) {
-                        sendMetricsLatest(node,metricSet);
-                    } else if(rollup.equals("maximum")) {
-                        sendMetricsMaximum(node,metricSet);
-                    } else if(rollup.equals("minimum")) {
-                        sendMetricsMinimim(node,metricSet);
-                    } else if(rollup.equals("summation")) {
-                        sendMetricsSummation(node,metricSet);
-                    } else {
-                        logger.info("Not supported Rollup agration:"+rollup);
+                    if(node != null) {
+                        if (rollup.equals("average")) {
+                            sendMetricsAverage(node, metricSet, frequencyInSeconds / itv);
+                        } else if (rollup.equals("latest")) {
+                            sendMetricsLatest(node, metricSet);
+                        } else if (rollup.equals("maximum")) {
+                            sendMetricsMaximum(node, metricSet);
+                        } else if (rollup.equals("minimum")) {
+                            sendMetricsMinimim(node, metricSet);
+                        } else if (rollup.equals("summation")) {
+                            sendMetricsSummation(node, metricSet);
+                        } else {
+                            logger.info("Not supported Rollup agration:" + rollup);
+                        }
                     }
                 } else {
-                    logger.debug("all samples");
-                    sendAllMetrics(node,metricSet);
+                    if(node != null) {
+                        logger.debug("all samples");
+                        sendAllMetrics(node, metricSet);
+                    }
                 }
             } else {
                 logger.debug("MetricsReceiver MetricSet is NULL");
@@ -561,6 +566,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
      */
     @Override
     public void onStartRetrieval() {
+
         try {
             logger.debug("onStartRetrieval - Graphite Host and Port: " + this.props.getProperty("host") + "\t" + this.props.getProperty("port"));
             this.disconnectCounter = 0;
