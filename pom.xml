@@ -5,8 +5,11 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>de.synaxon</groupId>
     <artifactId>statsfeeder-GraphiteReceiver</artifactId>
-    <version>1.0-IPM-3.9</version>
+    <version>1.0-IPM-3.10-Beta</version>
     <packaging>jar</packaging>
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
     <dependencies>
         <dependency>
             <groupId>com.vmware.tools</groupId>

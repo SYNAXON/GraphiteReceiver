@@ -55,7 +55,7 @@
                     <value>2003</value>
                 </property>
                 <property>
-                    <name>graphite_force_reconnect_timeout</name>
+                    <name>graphite_force_reconnect_timeou</name>
                     <value>600000</value>
                 </property>
                 <property>

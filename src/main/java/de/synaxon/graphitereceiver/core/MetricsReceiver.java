@@ -13,7 +13,6 @@ import de.synaxon.graphitereceiver.utils.Utils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -22,7 +21,6 @@ import java.net.Socket;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -49,7 +47,6 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
 
     private int disconnectCounter;
     private int disconnectAfter;
-    private int cacheRefreshInterval;
     private boolean isHostMap;
     private Map<String, MapPrefixSuffix> hostMap;
     private Map<String,String> clusterMap = new HashMap<String, String>();
@@ -59,10 +56,13 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
 
     private boolean isResetConn;
     private long metricsCount;
+    private int refreshMapPeriod;
 
-    private boolean isClusterHostMapInitialized;
-
-    private Date cacheRefreshStartTime;
+//    private boolean isClusterHostMapInitialized;
+//
+//    private Date cacheRefreshStartTime;
+//
+//    private Integer testing;
 
 
     /**
@@ -99,9 +99,6 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
         this.props = props;
         this.disconnectCounter = 0;
         logger.debug("MetricsReceiver Constructor.");
-
-        File test = new File(".");
-        logger.info("ALBERTO FILE PATH " + test.getAbsolutePath());
     }
     /**
      *
@@ -164,19 +161,40 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
             this.disconnectAfter = -1;
         }
 
-        try{
-            this.cacheRefreshInterval = Integer.parseInt(this.props.getProperty("cluster_map_refresh_timeout"));
-            if(this.cacheRefreshInterval < 1){
-                logger.info("if cluster_map_refresh_timeout is set to < 1 will not be supported: " + this.cacheRefreshInterval);
-                this.cacheRefreshInterval = -1;
-            }else{
-                logger.info("setExecutionContext:: cluster_map_refresh_timeout Value: " + this.cacheRefreshInterval);
+        long frequencyInSeconds = this.context.getConfiguration().getFrequencyInSeconds();
+
+        try {
+            long cacheRefreshInterval = Long.valueOf(this.props.getProperty("cluster_map_refresh_timeout"));
+            if (cacheRefreshInterval < frequencyInSeconds) {
+                logger.debug("cluster_map_refresh_timeout attribute is not set or not supported.");
+                logger.debug("cluster_map_refresh_timeout set: " + frequencyInSeconds + " seconds");
+                this.refreshMapPeriod = 1;
+            } else {
+                if(cacheRefreshInterval%frequencyInSeconds == 0) {
+                    this.refreshMapPeriod =  (int) (cacheRefreshInterval/frequencyInSeconds);
+                } else {
+                    this.refreshMapPeriod =  (int) (cacheRefreshInterval/frequencyInSeconds);
+                }
             }
-        }catch(Exception e){
+        } catch (NumberFormatException e) {
             logger.debug("cluster_map_refresh_timeout attribute is not set or not supported.");
-            logger.debug("cluster_map_refresh_timeout is set to < 1 will not be supported: ");
-            this.cacheRefreshInterval = -1;
+            logger.debug("cluster_map_refresh_timeout set: " + frequencyInSeconds + " seconds");
+            this.refreshMapPeriod = 1;
         }
+
+//        try{
+//            this.cacheRefreshInterval = Integer.parseInt(this.props.getProperty("cluster_map_refresh_timeout"));
+//            if(this.cacheRefreshInterval < 1){
+//                logger.info("if cluster_map_refresh_timeout is set to < 1 will not be supported: " + this.cacheRefreshInterval);
+//                this.cacheRefreshInterval = -1;
+//            }else{
+//                logger.info("setExecutionContext:: cluster_map_refresh_timeout Value: " + this.cacheRefreshInterval);
+//            }
+//        }catch(Exception e){
+//            logger.debug("cluster_map_refresh_timeout attribute is not set or not supported.");
+//            logger.debug("cluster_map_refresh_timeout is set to < 1 will not be supported: ");
+//            this.cacheRefreshInterval = -1;
+//        }
 
         if(this.props.getProperty("use_alternate_prefix_sufix_for_vm") != null && !this.props.getProperty("use_alternate_prefix_sufix_for_vm").isEmpty()) {
             this.isHostMap = Boolean.valueOf(this.props.getProperty("use_alternate_prefix_sufix_for_vm"));
@@ -194,7 +212,6 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
             }
         }
     }
-
 
     private void sendAllMetrics(String node,PerfMetricSet metricSet){
         final DateFormat SDF = new SimpleDateFormat(
@@ -385,21 +402,20 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
      */
     @Override
     public synchronized void receiveStats(String entityName, PerfMetricSet metricSet) {
-
         MOREFRetriever morefRetriever = this.context.getMorefRetriever();
         Integer frequencyInSeconds = this.context.getConfiguration().getFrequencyInSeconds();
 
         try {
             logger.debug("MetricsReceiver in receiveStats");
 
-            if(!this.isClusterHostMapInitialized){
-                if(this.cacheRefreshInterval != -1){
-                    this.cacheRefreshStartTime = new Date();
-                    logger.info("receiveStats cacheRefreshStartTime: " + cacheRefreshStartTime.toString());
-                }
-                this.isClusterHostMapInitialized = true;
-                Utils.initClusterHostMap(null, null, this.context, this.clusterMap);
-            }
+//            if(!this.isClusterHostMapInitialized){
+//                if(this.cacheRefreshInterval != -1){
+//                    this.cacheRefreshStartTime = new Date();
+//                    logger.info("receiveStats cacheRefreshStartTime: " + cacheRefreshStartTime.toString());
+//                }
+//                this.isClusterHostMapInitialized = true;
+//                Utils.initClusterHostMap(null, null, this.context, this.clusterMap);
+//            }
 
             if (metricSet != null) {
                 //-- Samples come with the following date format
@@ -415,7 +431,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                         return;
                     }
                     myEntityName = myEntityName.replace(" ", "_");
-                    cluster = Utils.getCluster(myEntityName, this.context, this.clusterMap);
+                    cluster = String.valueOf(clusterMap.get(myEntityName));
                     if(cluster == null || cluster.equals("")){
                         logger.warn("Cluster Not Found for Entity " + myEntityName);
                         return;
@@ -566,21 +582,21 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
      */
     @Override
     public void onStartRetrieval() {
-
+        Utils.initClusterHostMap(null, null, this.context, this.clusterMap);
         try {
             logger.debug("onStartRetrieval - Graphite Host and Port: " + this.props.getProperty("host") + "\t" + this.props.getProperty("port"));
             this.disconnectCounter = 0;
-
-            if(!isResetConn){
-                metricsCount = 0;
-                if(this.cacheRefreshStartTime != null){
-                    Date cacheRefreshEndTime = new Date();
-                    long refreshCacheTimeDiff = ((cacheRefreshEndTime.getTime()/1000) - (this.cacheRefreshStartTime.getTime()/1000));
-                    if(refreshCacheTimeDiff >= this.cacheRefreshInterval){
-                        this.isClusterHostMapInitialized = false;
-                    }
-                }
-            }
+//
+//            if(!isResetConn){
+//                metricsCount = 0;
+//                if(this.cacheRefreshStartTime != null){
+//                    Date cacheRefreshEndTime = new Date();
+//                    long refreshCacheTimeDiff = ((cacheRefreshEndTime.getTime()/1000) - (this.cacheRefreshStartTime.getTime()/1000));
+//                    if(refreshCacheTimeDiff >= this.cacheRefreshInterval){
+//                        this.isClusterHostMapInitialized = false;
+//                    }
+//                }
+//            }
 
             this.client = new Socket(
                     this.props.getProperty("host"),
