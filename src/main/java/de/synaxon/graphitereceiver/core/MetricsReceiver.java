@@ -8,6 +8,7 @@ import com.vmware.ee.statsfeeder.StatsExecutionContextAware;
 import com.vmware.ee.statsfeeder.StatsFeederListener;
 import com.vmware.ee.statsfeeder.StatsListReceiver;
 import de.synaxon.graphitereceiver.domain.MapPrefixSuffix;
+import de.synaxon.graphitereceiver.utils.Calculate;
 import de.synaxon.graphitereceiver.utils.MapperPrefixSuffix;
 import de.synaxon.graphitereceiver.utils.Utils;
 import org.apache.commons.logging.Log;
@@ -56,14 +57,10 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
 
     private boolean isResetConn;
     private long metricsCount;
-    private int refreshMapPeriod;
-
-//    private boolean isClusterHostMapInitialized;
-//
-//    private Date cacheRefreshStartTime;
-//
-//    private Integer testing;
-
+    private int refreshClusterMapPeriod;
+    private int clusterPeriod;
+    private int refreshHostMapPeriod;
+    private int hostMapPeriod;
 
     /**
      * This constructor will be called by StatsFeeder to load this receiver. The props object passed is built
@@ -89,24 +86,14 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
      * @param props properties
      */
     public MetricsReceiver(String name, Properties props) {
+        this.clusterPeriod = 0;
+        this.hostMapPeriod = 0;
         this. logger = LogFactory.getLog(MetricsReceiver.class);
         this.debugLogLevel = logger.isDebugEnabled();
-        if(name == null) {
-            this.name = "SampleStatsReceiver";
-        } else {
-            this.name = name;
-        }
+        this.name = (name == null) ? "SampleStatsReceiver": name;
         this.props = props;
         this.disconnectCounter = 0;
         logger.debug("MetricsReceiver Constructor.");
-    }
-    /**
-     *
-     * @return receiver name
-     */
-    public String getName() {
-        this.logger.debug("MetricsReceiver getName: " + this.name);
-        return name;
     }
 
     /**
@@ -119,8 +106,8 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
      */
     @Override
     public void setExecutionContext(ExecutionContext context) {
-        logger.debug("MetricsReceiver in setExecutionContext.");
-
+        logger.debug("MetricsReceiver join in setExecutionContext.");
+        logger.debug("Getting context and properties");
         this.context = context;
 
         if(this.props.getProperty("prefix") == null || this.props.getProperty("prefix").isEmpty()) {
@@ -162,43 +149,13 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
         }
 
         long frequencyInSeconds = this.context.getConfiguration().getFrequencyInSeconds();
+        this.refreshClusterMapPeriod = Utils.calculateIteration(frequencyInSeconds, this.props.getProperty("cluster_map_refresh_timeout"), "cluster_map_refresh_timeout");
+        this.refreshHostMapPeriod = Utils.calculateIteration(frequencyInSeconds, this.props.getProperty("alternate_vm_prefix_sufix_timeout"), "alternate_vm_prefix_sufix_timeout");
 
-        try {
-            long cacheRefreshInterval = Long.valueOf(this.props.getProperty("cluster_map_refresh_timeout"));
-            if (cacheRefreshInterval < frequencyInSeconds) {
-                logger.debug("cluster_map_refresh_timeout attribute is not set or not supported.");
-                logger.debug("cluster_map_refresh_timeout set: " + frequencyInSeconds + " seconds");
-                this.refreshMapPeriod = 1;
-            } else {
-                if(cacheRefreshInterval%frequencyInSeconds == 0) {
-                    this.refreshMapPeriod =  (int) (cacheRefreshInterval/frequencyInSeconds);
-                } else {
-                    this.refreshMapPeriod =  (int) (cacheRefreshInterval/frequencyInSeconds);
-                }
-            }
-        } catch (NumberFormatException e) {
-            logger.debug("cluster_map_refresh_timeout attribute is not set or not supported.");
-            logger.debug("cluster_map_refresh_timeout set: " + frequencyInSeconds + " seconds");
-            this.refreshMapPeriod = 1;
+        if(this.props.getProperty("use_alternate_vm_prefix_sufix") != null && !this.props.getProperty("use_alternate_vm_prefix_sufix").isEmpty()) {
+            this.isHostMap = Boolean.valueOf(this.props.getProperty("use_alternate_vm_prefix_sufix"));
         }
-
-//        try{
-//            this.cacheRefreshInterval = Integer.parseInt(this.props.getProperty("cluster_map_refresh_timeout"));
-//            if(this.cacheRefreshInterval < 1){
-//                logger.info("if cluster_map_refresh_timeout is set to < 1 will not be supported: " + this.cacheRefreshInterval);
-//                this.cacheRefreshInterval = -1;
-//            }else{
-//                logger.info("setExecutionContext:: cluster_map_refresh_timeout Value: " + this.cacheRefreshInterval);
-//            }
-//        }catch(Exception e){
-//            logger.debug("cluster_map_refresh_timeout attribute is not set or not supported.");
-//            logger.debug("cluster_map_refresh_timeout is set to < 1 will not be supported: ");
-//            this.cacheRefreshInterval = -1;
-//        }
-
-        if(this.props.getProperty("use_alternate_prefix_sufix_for_vm") != null && !this.props.getProperty("use_alternate_prefix_sufix_for_vm").isEmpty()) {
-            this.isHostMap = Boolean.valueOf(this.props.getProperty("use_alternate_prefix_sufix_for_vm"));
-        }
+        logger.debug("TST 1 - ishostmap " + this.isHostMap);
 
         if(this.isHostMap) {
             String hostMapPath = this.props.getProperty("alternate_vm_prefix_sufix_map_file");
@@ -211,182 +168,75 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                 }
             }
         }
+        Utils.initClusterHostMap(null, null, this.context, this.clusterMap);
+        logger.debug("MetricsReceiver  setExecutionContext.");
     }
 
-    private void sendAllMetrics(String node,PerfMetricSet metricSet){
-        final DateFormat SDF = new SimpleDateFormat(
-                "yyyy-MM-dd'T'HH:mm:ss'Z'");
-        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
+    /**
+     * This method is guaranteed to be called at the start of each retrieval in single or feeder mode.
+     * Receivers can place initialization code here that should be executed before retrieval is started.
+     */
+    @Override
+    public void onStartRetrieval() {
+        this.clusterPeriod++;
+        this.hostMapPeriod++;
+        if(this.refreshClusterMapPeriod <= this.clusterPeriod){
+            logger.debug("refreshClusterMapPeriod at period: " + this.clusterPeriod);
+            this.refreshClusterMapPeriod();
+        }
+        if(this.isHostMap && (this.refreshHostMapPeriod <= this.hostMapPeriod)){
+            logger.debug("refreshHostMapPeriod at period: " + this.hostMapPeriod);
+            this.refreshHostMapPeriod();
+        }
         try {
-            Iterator<PerfMetric> metrics = metricSet.getMetrics();
-            while (metrics.hasNext()) {
-                if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
-                    logger.debug("sendAllMetrics - PerfMetric Counter Value: " + this.disconnectCounter);
-                    this.resetGraphiteConnection();
-                }
-                PerfMetric sample = metrics.next();
-                out.printf("%s %s %s%n", node, sample.getValue(), SDF.parse(sample.getTimestamp()).getTime() / 1000);
+            logger.debug("onStartRetrieval - Graphite Host and Port: " + this.props.getProperty("host") + "\t" + this.props.getProperty("port"));
+            this.disconnectCounter = 0;
 
-                if(this.debugLogLevel){
-                    String str = String.format("%s %s %s%n", node, sample.getValue(), SDF.parse(sample.getTimestamp()).getTime() / 1000);
-                    logger.debug("Graphite Output: " + str);
-                }
-            }
-        } catch (Throwable t) {
-            logger.error("Error processing entity stats on metric: "+node, t);
+            this.client = new Socket(
+                    this.props.getProperty("host"),
+                    Integer.parseInt(this.props.getProperty("port", "2003"))
+            );
+            OutputStream s = this.client.getOutputStream();
+            this.out = new PrintWriter(s, true);
+        } catch (IOException ex) {
+            logger.error("Can't connect to graphite.", ex);
         }
     }
 
-    private void sendMetricsAverage(String node,PerfMetricSet metricSet,int n){
-        //averaging all values with last timestamp
-        final DateFormat SDF = new SimpleDateFormat(
-                "yyyy-MM-dd'T'HH:mm:ss'Z'");
-        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
-        try {
-            double value;
-            Iterator<PerfMetric> metrics = metricSet.getMetrics();
-            //sample initialization
-            PerfMetric sample=metrics.next();
-            value=Double.valueOf(sample.getValue());
-            while (metrics.hasNext()) {
-                sample = metrics.next();
-                value+=Double.valueOf(sample.getValue());
-            }
-            if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
-                logger.debug("sendMetricsAverage - PerfMetric Counter Value: " + this.disconnectCounter);
-                this.resetGraphiteConnection();
-            }
-            out.printf("%s %f %s%n", node, value/n, SDF.parse(sample.getTimestamp()).getTime() / 1000);
-
-            if(this.debugLogLevel){
-                String str = String.format("%s %f %s%n", node, value/n, SDF.parse(sample.getTimestamp()).getTime() / 1000);
-                logger.debug("Graphite Output Average: " + str);
-            }
-        } catch (NumberFormatException t) {
-            logger.error("Error on number format on metric: "+node, t);
-        } catch (ParseException t) {
-            logger.error("Error processing entity stats on metric: "+node, t);
-        }
+    public void refreshClusterMapPeriod() {
+        Utils.initClusterHostMap(null, null, this.context, this.clusterMap);
+        this.clusterPeriod = 0;
     }
 
-    private void sendMetricsLatest(String node,PerfMetricSet metricSet) {
-        final DateFormat SDF = new SimpleDateFormat(
-                "yyyy-MM-dd'T'HH:mm:ss'Z'");
-        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
-        try{
-            //get last
-
-            Iterator<PerfMetric> metrics = metricSet.getMetrics();
-            PerfMetric sample=metrics.next();
-            while (metrics.hasNext()) {
-                sample = metrics.next();
+    public void refreshHostMapPeriod() {
+        String hostMapPath = this.props.getProperty("alternate_vm_prefix_sufix_map_file");
+        if (hostMapPath != null && !hostMapPath.equals("")) {
+            try {
+                MapperPrefixSuffix mapperPrefixSuffix = new MapperPrefixSuffix(hostMapPath);
+                this.hostMap = mapperPrefixSuffix.getAllMapper();
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
             }
-            if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
-                logger.debug("sendMetricsLatest - PerfMetric Counter Value: " + this.disconnectCounter);
-                this.resetGraphiteConnection();
-            }
-            out.printf("%s %s %s%n", node,sample.getValue() , SDF.parse(sample.getTimestamp()).getTime() / 1000);
-
-            if(this.debugLogLevel){
-                String str = String.format("%s %s %s%n", node,sample.getValue() , SDF.parse(sample.getTimestamp()).getTime() / 1000);
-                logger.debug("Graphite Output Latest: " + str);
-            }
-        } catch (ParseException t) {
-            logger.error("Error processing entity stats on metric: "+node, t);
         }
+        this.hostMapPeriod = 0;
     }
-
-    private void sendMetricsMaximum(String node,PerfMetricSet metricSet) {
-        final DateFormat SDF = new SimpleDateFormat(
-                "yyyy-MM-dd'T'HH:mm:ss'Z'");
-        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
+    /**
+     * This method is guaranteed to be called, just once, at the end of each retrieval in single or feeder
+     * mode. Receivers can place termination code here that should be executed after the retrieval is
+     * completed.
+     */
+    @Override
+    public void onEndRetrieval() {
         try {
-            double value;
-            Iterator<PerfMetric> metrics = metricSet.getMetrics();
-            //first value to compare
-            PerfMetric sample=metrics.next();
-            value=Double.valueOf(sample.getValue());
-            //begin comparison iteration
-            while (metrics.hasNext()) {
-                sample = metrics.next();
-                double last=Double.valueOf(sample.getValue());
-                if(last > value) value=last;
+            logger.debug("MetricsReceiver onEndRetrieval.");
+            if(!isResetConn){
+                logger.info("onEndRetrieval PerformanceMetricsCountForEachRun: " + metricsCount);
             }
-            if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
-                logger.debug("sendMetricsMaximum - PerfMetric Counter Value: " + this.disconnectCounter);
-                this.resetGraphiteConnection();
-            }
-            out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000);
+            this.out.close();
+            this.client.close();
 
-            if(this.debugLogLevel){
-                String str = String.format("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000);
-                logger.debug("Graphite Output Maximum: " + str);
-            }
-        } catch (ParseException t) {
-            logger.error("Error processing entity stats on metric: "+node, t);
-        }
-    }
-
-    private void sendMetricsMinimim(String node,PerfMetricSet metricSet) {
-        final DateFormat SDF = new SimpleDateFormat(
-                "yyyy-MM-dd'T'HH:mm:ss'Z'");
-        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
-        try {
-            //get minimum values with last timestamp
-            double value;
-            Iterator<PerfMetric> metrics = metricSet.getMetrics();
-            //first value to compare
-            PerfMetric sample=metrics.next();
-            value=Double.valueOf(sample.getValue());
-            //begin comparison iteration
-            while (metrics.hasNext()) {
-                sample = metrics.next();
-                double last=Double.valueOf(sample.getValue());
-                if(last < value) value=last;
-            }
-            if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
-                logger.debug("sendMetricsMinimim - PerfMetric Counter Value: " + this.disconnectCounter);
-                this.resetGraphiteConnection();
-            }
-            out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000);
-
-            if(this.debugLogLevel){
-                String str = String.format("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000);
-                logger.debug("Graphite Output Minimum: " + str);
-            }
-        } catch (ParseException t) {
-            logger.error("Error processing entity stats on metric: "+node, t);
-        }
-    }
-
-    private void sendMetricsSummation(String node,PerfMetricSet metricSet){
-        final DateFormat SDF = new SimpleDateFormat(
-                "yyyy-MM-dd'T'HH:mm:ss'Z'");
-        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
-        try {
-            //get minimum values with last timestamp
-            double value;
-            Iterator<PerfMetric> metrics = metricSet.getMetrics();
-            //first value to compare
-            PerfMetric sample=metrics.next();
-            value=Double.valueOf(sample.getValue());
-            //begin comparison iteration
-            while (metrics.hasNext()) {
-                sample = metrics.next();
-                value+=Double.valueOf(sample.getValue());
-            }
-            if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
-                logger.debug("sendMetricsSummation - PerfMetric Counter Value: " + this.disconnectCounter);
-                this.resetGraphiteConnection();
-            }
-            out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000);
-
-            if(this.debugLogLevel){
-                String str = String.format("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000);
-                logger.debug("Graphite Output Summation: " + str);
-            }
-        } catch (ParseException t) {
-            logger.error("Error processing entity stats on metric: "+node, t);
+        } catch (IOException ex) {
+            logger.error("Can't close resources.", ex);
         }
     }
 
@@ -419,7 +269,6 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
 
             if (metricSet != null) {
                 //-- Samples come with the following date format
-                String node;
                 String cluster = null;
 
                 if((metricSet.getEntityName().contains("VirtualMachine")) || (metricSet.getEntityName().contains("HostSystem"))){
@@ -514,38 +363,19 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                 graphiteTree.put("rollup", rollup);
                 graphiteTree.put("counterName", counterName);
                 graphiteTree.put("hostName", hostName);
-                node = Utils.getNode(graphiteTree, place_rollup_in_the_end, this.isHostMap, this.hostMap);
+                String node = Utils.getNode(graphiteTree, place_rollup_in_the_end, this.isHostMap, this.hostMap);
 
                 metricsCount += metricSet.size();
                 if(only_one_sample_x_period) {
                     logger.debug("one sample x period");
                     //check if metricSet has the expected number of metrics
-                    int itv=metricSet.getInterval();
-                    if(frequencyInSeconds % itv != 0) {
-                        logger.warn("frequency " + frequencyInSeconds + " is not multiple of interval: " + itv + " at metric : " + node);
-                        return;
-                    }
-                /* Noticed expected and received samples never match. I think we should check for whether received samples
-                 * is the multiple of expected samples? Commenting here to move forward.
-                if(n != metricSet.getValues().size()){
-                    logger.error("ERROR: "+n+" expected samples but got "+metricSet.getValues().size()+ "at metric :"+node);
-                    return;
-                }
-                */
                     if(node != null) {
-                        if (rollup.equals("average")) {
-                            sendMetricsAverage(node, metricSet, frequencyInSeconds / itv);
-                        } else if (rollup.equals("latest")) {
-                            sendMetricsLatest(node, metricSet);
-                        } else if (rollup.equals("maximum")) {
-                            sendMetricsMaximum(node, metricSet);
-                        } else if (rollup.equals("minimum")) {
-                            sendMetricsMinimim(node, metricSet);
-                        } else if (rollup.equals("summation")) {
-                            sendMetricsSummation(node, metricSet);
-                        } else {
-                            logger.info("Not supported Rollup agration:" + rollup);
+                        int itv=metricSet.getInterval();
+                        if(frequencyInSeconds % itv != 0) {
+                            logger.warn("frequency " + frequencyInSeconds + " is not multiple of interval: " + itv + " at metric : " + node);
+                            return;
                         }
+                        this.sendMetric(node, metricSet.getMetrics(), rollup, frequencyInSeconds / itv);
                     }
                 } else {
                     if(node != null) {
@@ -576,57 +406,71 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
         }
     }
 
-    /**
-     * This method is guaranteed to be called at the start of each retrieval in single or feeder mode.
-     * Receivers can place initialization code here that should be executed before retrieval is started.
-     */
-    @Override
-    public void onStartRetrieval() {
-        Utils.initClusterHostMap(null, null, this.context, this.clusterMap);
+    private void sendMetric(String node,Iterator<PerfMetric> metrics, String rollup, int n){
+        final DateFormat SDF = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
         try {
-            logger.debug("onStartRetrieval - Graphite Host and Port: " + this.props.getProperty("host") + "\t" + this.props.getProperty("port"));
-            this.disconnectCounter = 0;
-//
-//            if(!isResetConn){
-//                metricsCount = 0;
-//                if(this.cacheRefreshStartTime != null){
-//                    Date cacheRefreshEndTime = new Date();
-//                    long refreshCacheTimeDiff = ((cacheRefreshEndTime.getTime()/1000) - (this.cacheRefreshStartTime.getTime()/1000));
-//                    if(refreshCacheTimeDiff >= this.cacheRefreshInterval){
-//                        this.isClusterHostMapInitialized = false;
-//                    }
-//                }
-//            }
+            PerfMetric sample = metrics.next();
+            double value = 0;
+            if (rollup.equals("average")) {
+                value = Calculate.calculateAverage(metrics, n);
+            } else if (rollup.equals("latest")) {
+                value = Calculate.calculateLatest(metrics);
+            } else if (rollup.equals("maximum")) {
+                value = Calculate.calculateMaximun(metrics);
+            } else if (rollup.equals("minimum")) {
+                value = Calculate.calculateMinimun(metrics);
+            } else if (rollup.equals("summation")) {
+                value = Calculate.calculateSumation(metrics);
+            } else {
+                logger.info("Not supported Rollup agration:" + rollup);
+            }
 
-            this.client = new Socket(
-                    this.props.getProperty("host"),
-                    Integer.parseInt(this.props.getProperty("port", "2003"))
-            );
-            OutputStream s = this.client.getOutputStream();
-            this.out = new PrintWriter(s, true);
-        } catch (IOException ex) {
-            logger.error("Can't connect to graphite.", ex);
+            if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
+                logger.debug("sendMetric - PerfMetric Counter Value: " + this.disconnectCounter);
+                this.resetGraphiteConnection();
+            }
+            out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000);
+
+            if(this.debugLogLevel){
+                String str = String.format("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000);
+                logger.debug("Graphite Output Summation: " + str);
+            }
+        } catch (ParseException t) {
+            logger.error("Error processing entity stats on metric: "+node, t);
+        }
+    }
+
+    private void sendAllMetrics(String node,PerfMetricSet metricSet){
+        final DateFormat SDF = new SimpleDateFormat(
+                "yyyy-MM-dd'T'HH:mm:ss'Z'");
+        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
+        try {
+            Iterator<PerfMetric> metrics = metricSet.getMetrics();
+            while (metrics.hasNext()) {
+                if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
+                    logger.debug("sendAllMetrics - PerfMetric Counter Value: " + this.disconnectCounter);
+                    this.resetGraphiteConnection();
+                }
+                PerfMetric sample = metrics.next();
+                out.printf("%s %s %s%n", node, sample.getValue(), SDF.parse(sample.getTimestamp()).getTime() / 1000);
+
+                if(this.debugLogLevel){
+                    String str = String.format("%s %s %s%n", node, sample.getValue(), SDF.parse(sample.getTimestamp()).getTime() / 1000);
+                    logger.debug("Graphite Output: " + str);
+                }
+            }
+        } catch (Throwable t) {
+            logger.error("Error processing entity stats on metric: "+node, t);
         }
     }
 
     /**
-     * This method is guaranteed to be called, just once, at the end of each retrieval in single or feeder
-     * mode. Receivers can place termination code here that should be executed after the retrieval is
-     * completed.
+     *
+     * @return receiver name
      */
-    @Override
-    public void onEndRetrieval() {
-        try {
-            logger.debug("MetricsReceiver onEndRetrieval.");
-            if(!isResetConn){
-                logger.info("onEndRetrieval PerformanceMetricsCountForEachRun: " + metricsCount);
-            }
-
-            this.out.close();
-            this.client.close();
-
-        } catch (IOException ex) {
-            logger.error("Can't close resources.", ex);
-        }
+    public String getName() {
+        this.logger.debug("MetricsReceiver getName: " + this.name);
+        return name;
     }
 }

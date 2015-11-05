@@ -47,27 +47,6 @@ public class Utils {
     }
 
     /**
-     * getCluster returns associated cluster to the calling method. If requested VM/ESX managed entity does not exist in the cache,
-     * it refreshes the cache.
-     *
-     * Potential Bottlenecks: If too many new VirtualMachines/ESX hosts added during runtime (between cache refresh intervals - this.cacheRefreshInterval)
-     *                        may affect the performance because of too many vCenter connections and cache refreshments. We have tested & verified
-     */
-    public static String getCluster(String entity, ExecutionContext context, Map<String,String> clusterMap){
-        try{
-            String value = String.valueOf(clusterMap.get(entity));
-//            if(value == null){
-//                logger.warn("Cluster Not Found for Managed Entity " + entity);
-//                logger.warn("Reinitializing Cluster Entity Map");
-//                Utils.initClusterHostMap(null, null, context, clusterMap);
-//                value = String.valueOf(clusterMap.get(entity));
-//            }
-            return value;
-        }catch(Exception e){
-            return null;
-        }
-    }
-    /**
      * initClusterHostMap is a self recursive method for generating VM/ESX to Cluster Hash Map.
      * In the first iteration it gathers all clusters and in consecutive calls for each cluster it updates Hash Map.
      * The logic here is use ComputeResource Entity as a base for gathering all virtual machines and ESX Hosts.
@@ -75,7 +54,6 @@ public class Utils {
      * if VM/ESX does not exist in the hash map.
      */
     public static boolean initClusterHostMap(String clusterName, ManagedObjectReference rootFolder, ExecutionContext context, Map<String,String> clusterMap){
-        logger.debug("TST initClusterHostMap Begin");
         try {
             if(clusterName == null){
                 clusterMap.clear();
@@ -174,6 +152,8 @@ public class Utils {
         return connection.getVimPort().retrievePropertiesEx(connection.getPropertyCollector(), propertyFilterSpecs, new RetrieveOptions());
     }
 
+
+
     public static String getNode(Map<String,String> graphiteTree, Boolean place_rollup_in_the_end, Boolean isHostMap, Map<String, MapPrefixSuffix> hostMap) {
 
         String graphite_prefix = graphiteTree.get("graphite_prefix");
@@ -192,23 +172,38 @@ public class Utils {
         if ("null".equals(cluster)) {
             logger.warn("The cluster is null (String)");
         }
-        if((isHostMap && hostMap.size() > 0) && (hostName != null && !hostName.equals(""))) {
-            MapPrefixSuffix mapPrefixSuffix = hostMap.get(hostName);
+        if(isHostMap) {
+            if ((hostMap.size() > 0) && (hostName != null && !hostName.equals(""))) {
+                logger.debug("TST 2 - eName: " + eName);
+                MapPrefixSuffix mapPrefixSuffix = hostMap.get(hostName);
 
-            String filePrefix = null ;
-            String fileSufix = null;
-            if(mapPrefixSuffix != null) {
-                filePrefix = mapPrefixSuffix.getPrefix();
-                fileSufix = mapPrefixSuffix.getSufix();
-            }
-            if(filePrefix != null && fileSufix != null) {
-                nodeBuilder.append(filePrefix).append(".");
-                nodeBuilder.append(hostName).append(".");
-                nodeBuilder.append(fileSufix).append(".");
+                String filePrefix = null;
+                String fileSufix = null;
+                if (mapPrefixSuffix != null) {
+                    filePrefix = mapPrefixSuffix.getPrefix();
+                    fileSufix = mapPrefixSuffix.getSufix();
+                    logger.debug("TST 1 - filePrefix " + filePrefix);
+                    logger.debug("TST 1 - fileSufix " + fileSufix);
+                } else {
+                    return null;
+                }
+                if (filePrefix != null && fileSufix != null) {
+                    nodeBuilder.append(filePrefix).append(".");
+                    nodeBuilder.append(hostName).append(".");
+                    nodeBuilder.append(fileSufix).append(".");
+                } else {
+                    nodeBuilder.append(graphite_prefix).append(".");
+                    nodeBuilder.append((cluster == null || ("".equals(cluster))) ? "" : cluster + ".");
+                    nodeBuilder.append(eName).append(".");
+                }
             } else {
-                nodeBuilder.append(graphite_prefix).append(".");
-                nodeBuilder.append((cluster == null || ("".equals(cluster))) ? "" : cluster + ".");
-                nodeBuilder.append(eName).append(".");
+                if("vm".equals(eName)){
+                    return null;
+                } else {
+                    nodeBuilder.append(graphite_prefix).append(".");
+                    nodeBuilder.append((cluster == null || ("".equals(cluster) || ("null".equals(cluster)))) ? "" : cluster + ".");
+                    nodeBuilder.append(eName).append(".");
+                }
             }
         } else {
             nodeBuilder.append(graphite_prefix).append(".");
@@ -237,4 +232,25 @@ public class Utils {
         return nodeBuilder.toString();
     }
 
+    public static int calculateIteration(long frequencyInSeconds, String refreshInterval, String type){
+
+        try {
+            long cacheRefreshInterval = Long.valueOf(refreshInterval);
+            if (cacheRefreshInterval < frequencyInSeconds) {
+                logger.debug(type + " attribute is not set or not supported.");
+                logger.debug(type + " set: " + frequencyInSeconds + " seconds");
+                return 1;
+            } else {
+                if(cacheRefreshInterval%frequencyInSeconds == 0) {
+                    return (int) (cacheRefreshInterval/frequencyInSeconds);
+                } else {
+                    return (int) (cacheRefreshInterval/frequencyInSeconds);
+                }
+            }
+        } catch (NumberFormatException e) {
+            logger.debug(type + " attribute is not set or not supported.");
+            logger.debug(type + " set: " + frequencyInSeconds + " seconds");
+            return 1;
+        }
+    }
 }

@@ -75,14 +75,17 @@
                     <value>true</value>
                 </property>
                 <property>
-                    <name>use_alternate_prefix_sufix_for_vm</name>
+                    <name>use_alternate_vm_prefix_sufix</name>
                     <value>true</value>
                 </property>
                 <property>
                     <name>alternate_vm_prefix_sufix_map_file</name>
                     <value>./hostname.map</value>
                 </property>
-
+                <property>
+                    <name>alternate_vm_prefix_sufix_timeout</name>
+                    <value>3600</value>
+                </property>
                 <!--
                     if "use_entity_type_prefix" is set to true the receiver will prepend the type
                     [HostSystem]    => "esx".<hostname>
