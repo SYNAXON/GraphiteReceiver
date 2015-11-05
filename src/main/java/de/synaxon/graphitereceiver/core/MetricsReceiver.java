@@ -1,4 +1,4 @@
-package de.synaxon.graphitereceiver;
+package de.synaxon.graphitereceiver.core;
 
 import com.vmware.ee.statsfeeder.ExecutionContext;
 import com.vmware.ee.statsfeeder.MOREFRetriever;
@@ -471,7 +471,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                     nodeBuilder.append(statType);
                 }
                 logger.debug((instanceName == null || ("".equals(instanceName))) ?
-                                new StringBuilder("GP :").append(this.properties.getProperty("prefix")).append(" EN: ").append(eName).append(" CN: ").append(counterName).append(" ST: ").append(statType).toString():
+                                new StringBuilder("GP :").append(this.properties.getProperty("prefix")).append(" EN: ").append(eName).append(" CN: ").append(counterName).append(" ST: ").append(statType).toString() :
                                 new StringBuilder("GP :").append(this.properties.getProperty("prefix")).append(" EN: ").append(eName).append(" GN :").append(groupName).append(" IN :").append(instanceName).append(" MN :").append(metricName).append(" ST: ").append(statType).append(" RU: ").append(rollup).toString()
                 );
                 node = nodeBuilder.toString();
