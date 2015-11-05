@@ -1,12 +1,25 @@
 package de.synaxon.graphitereceiver;
 
+import com.vmware.ee.common.VimConnection;
 import com.vmware.ee.statsfeeder.ExecutionContext;
+import com.vmware.ee.statsfeeder.MOREFRetriever;
 import com.vmware.ee.statsfeeder.PerfMetricSet;
 import com.vmware.ee.statsfeeder.PerfMetricSet.PerfMetric;
 import com.vmware.ee.statsfeeder.StatsExecutionContextAware;
 import com.vmware.ee.statsfeeder.StatsFeederListener;
 import com.vmware.ee.statsfeeder.StatsListReceiver;
-import com.vmware.ee.statsfeeder.MOREFRetriever;
+import com.vmware.vim25.DynamicProperty;
+import com.vmware.vim25.ManagedObjectReference;
+import com.vmware.vim25.ObjectContent;
+import com.vmware.vim25.ObjectSpec;
+import com.vmware.vim25.PropertyFilterSpec;
+import com.vmware.vim25.PropertySpec;
+import com.vmware.vim25.RetrieveOptions;
+import com.vmware.vim25.RetrieveResult;
+import com.vmware.vim25.TraversalSpec;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
@@ -15,15 +28,15 @@ import java.net.Socket;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.TimeZone;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-
-import com.vmware.vim25.*;
-import com.vmware.ee.common.VimConnection;
-import java.util.*;
 
 /**
  *
@@ -550,7 +563,9 @@ public class MetricsReceiver implements StatsListReceiver,
 
                 if((metricSet.getEntityName().contains("VirtualMachine") == true) ||
                         (metricSet.getEntityName().contains("HostSystem") == true)){
-                    String myEntityName = metricSet.getEntityName().replace("[vCenter]", "").replace("[VirtualMachine]", "").replace("[HostSystem]", "");
+
+                    String myEntityName = ret.parseEntityName(metricSet.getEntityName());
+
                     if(myEntityName == null || myEntityName.equals("")){
                         logger.warn("Received Invalid Managed Entity. Failed to Continue.");
                         return;
@@ -610,7 +625,6 @@ public class MetricsReceiver implements StatsListReceiver,
                     Finally node contains these fields (depending on properties)
                     graphite_prefix.cluster.eName.groupName.instanceName.metricName_rollup_statType
                     graphite_prefix.cluster.eName.groupName.instanceName.metricName_statType_rollup
-
                     NOTES: if cluster is null cluster name disappears from node string.
                            if instanceName is null instanceName name disappears from node string.
                  */
