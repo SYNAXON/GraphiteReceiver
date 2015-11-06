@@ -3,6 +3,7 @@ package de.synaxon.graphitereceiver.utils;
 import com.vmware.ee.common.VimConnection;
 import com.vmware.ee.statsfeeder.ExecutionContext;
 import com.vmware.vim25.DynamicProperty;
+import com.vmware.vim25.InvalidPropertyFaultMsg;
 import com.vmware.vim25.ManagedObjectReference;
 import com.vmware.vim25.ObjectContent;
 import com.vmware.vim25.ObjectSpec;
@@ -10,12 +11,14 @@ import com.vmware.vim25.PropertyFilterSpec;
 import com.vmware.vim25.PropertySpec;
 import com.vmware.vim25.RetrieveOptions;
 import com.vmware.vim25.RetrieveResult;
+import com.vmware.vim25.RuntimeFaultFaultMsg;
 import com.vmware.vim25.TraversalSpec;
 import de.synaxon.graphitereceiver.domain.MapPrefixSuffix;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
@@ -44,147 +47,108 @@ public class Utils {
     }
 
     /**
-     * getCluster returns associated cluster to the calling method. If requested VM/ESX managed entity does not exist in the cache,
-     * it refreshes the cache.
-     *
-     * Potential Bottlenecks: If too many new VirtualMachines/ESX hosts added during runtime (between cache refresh intervals - this.cacheRefreshInterval)
-     *                        may affect the performance because of too many vCenter connections and cache refreshments. We have tested & verified
-     */
-    public static String getCluster(String entity, ExecutionContext context, Map<String,String> clusterMap){
-        try{
-            String value = String.valueOf(clusterMap.get(entity));
-            if(value == null){
-                logger.warn("Cluster Not Found for Managed Entity " + entity);
-                logger.warn("Reinitializing Cluster Entity Map");
-                Utils.initClusterHostMap(null, null, context, clusterMap);
-                value = String.valueOf(clusterMap.get(entity));
-            }
-            return value;
-        }catch(Exception e){
-            return null;
-        }
-    }
-
-    /**
      * initClusterHostMap is a self recursive method for generating VM/ESX to Cluster Hash Map.
      * In the first iteration it gathers all clusters and in consecutive calls for each cluster it updates Hash Map.
      * The logic here is use ComputeResource Entity as a base for gathering all virtual machines and ESX Hosts.
      * As part of configurations, GraphiteReceiver invokes this method at regular intervals (configured) and during runtime
      * if VM/ESX does not exist in the hash map.
      */
-    public static boolean initClusterHostMap(String ClusterName, ManagedObjectReference ClusterMor, ExecutionContext context, Map<String,String> clusterMap){        try {
-            logger.debug("initClusterHostMap Begin");
-            boolean retVal = true;
-
-            VimConnection connection = context.getConnection();
-
-            ManagedObjectReference viewMgrRef = connection.getViewManager();
-            ManagedObjectReference propColl = connection.getPropertyCollector();
-            List<String> clusterList = new ArrayList<String>();
-            clusterList.add("ComputeResource");
-            clusterList.add("HostSystem");
-            clusterList.add("VirtualMachine");
-            ManagedObjectReference rootFolder;
-            if(ClusterName == null){
-                rootFolder = connection.getRootFolder();
+    public static boolean initClusterHostMap(String clusterName, ManagedObjectReference rootFolder, ExecutionContext context, Map<String,String> clusterMap){
+        try {
+            if(clusterName == null){
                 clusterMap.clear();
-            }else {
-                rootFolder = ClusterMor;
             }
-            ManagedObjectReference cViewRef = connection.getVimPort().createContainerView(viewMgrRef, rootFolder, clusterList, true);
-            if(cViewRef != null){
-                logger.debug("cViewRef is not null: " + ClusterName);
-            } else {
-                logger.debug("cViewRef is null: " + ClusterName);
-                return false;
-            }
+            VimConnection connection = context.getConnection();
+            RetrieveResult retrieveResult = getRetrieveResult(clusterName, connection, rootFolder);
 
-            TraversalSpec tSpec = new TraversalSpec();
-            tSpec.setName("traverseEntities");
-            tSpec.setPath("view");
-            tSpec.setSkip(false);
-            tSpec.setType("ContainerView");
+            while((retrieveResult != null) && (retrieveResult.getObjects() != null) && (retrieveResult.getObjects().size() > 0)){
 
-            ObjectSpec oSpec = new ObjectSpec();
-            oSpec.setObj(cViewRef);
-            oSpec.setSkip(true);
-            oSpec.getSelectSet().add(tSpec);
+                String token = retrieveResult.getToken();
 
-            TraversalSpec tSpecC = new TraversalSpec();
-            if(ClusterName == null){
-                tSpecC.setType("ComputeResource");
-                tSpecC.setPath("host");
-                tSpecC.setSkip(false);
-            }else{
-                tSpecC.setType("HostSystem");
-                tSpecC.setPath("vm");
-                tSpecC.setSkip(false);
-            }
-            tSpec.getSelectSet().add(tSpecC);
-
-            PropertyFilterSpec fSpec = new PropertyFilterSpec();
-            fSpec.getObjectSet().add(oSpec);
-
-            if(ClusterName == null){
-                PropertySpec pSpecC = new PropertySpec();
-                pSpecC.setType("ComputeResource");
-                pSpecC.getPathSet().add("name");
-                fSpec.getPropSet().add(pSpecC);
-            }else{
-                PropertySpec pSpecH = new PropertySpec();
-                pSpecH.setType("HostSystem");
-                pSpecH.getPathSet().add("name");
-                fSpec.getPropSet().add(pSpecH);
-
-                PropertySpec pSpecV = new PropertySpec();
-                pSpecV.setType("VirtualMachine");
-                pSpecV.getPathSet().add("name");
-                fSpec.getPropSet().add(pSpecV);
-
-                /* Place Holder. This property spec did not return cluster name for Datastore and ResourcePool.
-                PropertySpec pSpecD = new PropertySpec();
-                pSpecD.setType("Datastore");
-                pSpecD.getPathSet().add("name");
-                fSpec.getPropSet().add(pSpecD);
-                PropertySpec pSpecR = new PropertySpec();
-                pSpecR.setType("ResourcePool");
-                pSpecR.getPathSet().add("name");
-                fSpec.getPropSet().add(pSpecR);
-                */
-            }
-
-            List<PropertyFilterSpec> fSpecList = new ArrayList<PropertyFilterSpec>();
-            fSpecList.add(fSpec);
-
-            RetrieveOptions ro = new RetrieveOptions();
-            RetrieveResult props = connection.getVimPort().retrievePropertiesEx(propColl, fSpecList, ro);
-
-            while((props != null) && (props.getObjects() != null) && (props.getObjects().size() > 0)){
-                String token = props.getToken();
-                for(ObjectContent oc : props.getObjects()){
-                    List<DynamicProperty> dps = oc.getPropSet();
-
-                    if(ClusterName != null){
-                        String cluster = new String(ClusterName).replace(" ", "_");
-                        String entityName = new String((String)dps.get(0).getVal()).replace(" ", "_");
-                        logger.debug("ClusterName: " + cluster + " : " + oc.getObj().getType() + ": " + entityName + " : ClusterEntityMapSize: " + clusterMap.size());
-                        clusterMap.put(entityName, cluster);
-                    }
-                    if(ClusterName == null){
-                        initClusterHostMap((String) (dps.get(0).getVal()), oc.getObj(), context, clusterMap);
+                for(ObjectContent objectContent : retrieveResult.getObjects()){
+                    List<DynamicProperty> dynamicProperties = objectContent.getPropSet();
+                    if(clusterName != null){
+                        String dpsGet = String.valueOf(dynamicProperties.get(0).getVal());
+                        clusterMap.put(dpsGet.replace(" ", "_"), clusterName.replace(" ", "_"));
+                    } else {
+                        initClusterHostMap((String) (dynamicProperties.get(0).getVal()), objectContent.getObj(), context, clusterMap);
                     }
                 }
-                if (token == null) break;
-                props = connection.getVimPort().continueRetrievePropertiesEx(propColl, token);
-            } // while
-            logger.debug("initClusterHostMap End");
-            return retVal;
+
+                if (token == null) {
+                    return true;
+                }
+                retrieveResult = connection.getVimPort().continueRetrievePropertiesEx(connection.getPropertyCollector(), token);
+            }
+            return true;
         } catch(Exception e){
             logger.fatal("Critical Error Detected.");
             logger.fatal(e.getLocalizedMessage());
             return false;
         }
-    } // initClusterHostMap
+    }
+
+    private static TraversalSpec getTraversalSpec(String clusterName){
+        TraversalSpec traversalSpec = new TraversalSpec();
+        traversalSpec.setName("traverseEntities");
+        traversalSpec.setPath("view");
+        traversalSpec.setSkip(false);
+        traversalSpec.setType("ContainerView");
+
+        TraversalSpec traversalSpecAux = new TraversalSpec();
+        if(clusterName == null){
+            traversalSpecAux.setType("ComputeResource");
+            traversalSpecAux.setPath("host");
+        }else{
+            traversalSpecAux.setType("HostSystem");
+            traversalSpecAux.setPath("vm");
+        }
+        traversalSpecAux.setSkip(false);
+        traversalSpec.getSelectSet().add(traversalSpecAux);
+        return traversalSpec;
+    }
+    private static PropertySpec getPropertySpec(String type){
+        PropertySpec propertySpec = new PropertySpec();
+        propertySpec.setType(type);
+        propertySpec.getPathSet().add("name");
+        return propertySpec;
+    }
+
+    private static RetrieveResult getRetrieveResult(String clusterName, VimConnection connection, ManagedObjectReference rootFolder) throws RuntimeFaultFaultMsg, InvalidPropertyFaultMsg {
+        List<String> clusterList = new ArrayList<String>();
+        clusterList.add("ComputeResource");
+        clusterList.add("HostSystem");
+        clusterList.add("VirtualMachine");
+
+        ManagedObjectReference rootFolderAux = (clusterName == null)? connection.getRootFolder():rootFolder;
+        ManagedObjectReference viewManager = connection.getVimPort().createContainerView(connection.getViewManager(), rootFolderAux, clusterList, true);
+
+        if(viewManager == null) {
+            logger.debug("cViewRef is null: " + clusterName);
+            return null;
+        }
+        logger.debug("cViewRef is not null: " + clusterName);
+
+        ObjectSpec objectSpec = new ObjectSpec();
+        objectSpec.setObj(viewManager);
+        objectSpec.setSkip(true);
+        objectSpec.getSelectSet().add(getTraversalSpec(clusterName));
+
+        PropertyFilterSpec propertyFilterSpec = new PropertyFilterSpec();
+        propertyFilterSpec.getObjectSet().add(objectSpec);
+
+        if(clusterName == null){
+            propertyFilterSpec.getPropSet().add(getPropertySpec("ComputeResource"));
+        }else{
+            propertyFilterSpec.getPropSet().add(getPropertySpec("HostSystem"));
+            propertyFilterSpec.getPropSet().add(getPropertySpec("VirtualMachine"));
+        }
+        List<PropertyFilterSpec> propertyFilterSpecs = new LinkedList<PropertyFilterSpec>();
+        propertyFilterSpecs.add(propertyFilterSpec);
+        return connection.getVimPort().retrievePropertiesEx(connection.getPropertyCollector(), propertyFilterSpecs, new RetrieveOptions());
+    }
+
+
 
     public static String getNode(Map<String,String> graphiteTree, Boolean place_rollup_in_the_end, Boolean isHostMap, Map<String, MapPrefixSuffix> hostMap) {
 
@@ -204,8 +168,6 @@ public class Utils {
         if ("null".equals(cluster)) {
             logger.warn("The cluster is null (String)");
         }
-        logger.debug("TST 4 - isHostMap: " + isHostMap);
-        logger.debug("TST 4 - hostMap size: " + hostMap.size());
         if(isHostMap) {
             if ((hostMap.size() > 0) && (hostName != null && !hostName.equals(""))) {
                 MapPrefixSuffix mapPrefixSuffix = hostMap.get(hostName);
@@ -216,6 +178,7 @@ public class Utils {
                     filePrefix = mapPrefixSuffix.getPrefix();
                     fileSufix = mapPrefixSuffix.getSufix();
                 } else {
+
                     return null;
                 }
                 if (filePrefix != null && fileSufix != null) {
@@ -261,5 +224,27 @@ public class Utils {
             return null;
         }
         return nodeBuilder.toString();
+    }
+
+    public static int calculateIteration(long frequencyInSeconds, String refreshInterval, String type){
+
+        try {
+            long cacheRefreshInterval = Long.valueOf(refreshInterval);
+            if (cacheRefreshInterval < frequencyInSeconds) {
+                logger.debug(type + " attribute is not set or not supported.");
+                logger.debug(type + " set: " + frequencyInSeconds + " seconds");
+                return 1;
+            } else {
+                if(cacheRefreshInterval%frequencyInSeconds == 0) {
+                    return (int) (cacheRefreshInterval/frequencyInSeconds);
+                } else {
+                    return (int) (cacheRefreshInterval/frequencyInSeconds);
+                }
+            }
+        } catch (NumberFormatException e) {
+            logger.debug(type + " attribute is not set or not supported.");
+            logger.debug(type + " set: " + frequencyInSeconds + " seconds");
+            return 1;
+        }
     }
 }
