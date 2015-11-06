@@ -11,6 +11,7 @@ import com.vmware.vim25.PropertySpec;
 import com.vmware.vim25.RetrieveOptions;
 import com.vmware.vim25.RetrieveResult;
 import com.vmware.vim25.TraversalSpec;
+import de.synaxon.graphitereceiver.domain.MapPrefixSuffix;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -184,4 +185,81 @@ public class Utils {
             return false;
         }
     } // initClusterHostMap
+
+    public static String getNode(Map<String,String> graphiteTree, Boolean place_rollup_in_the_end, Boolean isHostMap, Map<String, MapPrefixSuffix> hostMap) {
+
+        String graphite_prefix = graphiteTree.get("graphite_prefix");
+        String cluster = graphiteTree.get("cluster");
+        String eName = graphiteTree.get("eName");
+        String groupName = graphiteTree.get("groupName");
+        String instanceName = graphiteTree.get("instanceName");
+        String metricName = graphiteTree.get("metricName");
+        String statType = graphiteTree.get("statType");
+        String rollup = graphiteTree.get("rollup");
+        String counterName = graphiteTree.get("counterName");
+
+        String hostName = graphiteTree.get("hostName");
+
+        StringBuilder nodeBuilder = new StringBuilder();
+        if ("null".equals(cluster)) {
+            logger.warn("The cluster is null (String)");
+        }
+        logger.debug("TST 4 - isHostMap: " + isHostMap);
+        logger.debug("TST 4 - hostMap size: " + hostMap.size());
+        if(isHostMap) {
+            if ((hostMap.size() > 0) && (hostName != null && !hostName.equals(""))) {
+                MapPrefixSuffix mapPrefixSuffix = hostMap.get(hostName);
+
+                String filePrefix;
+                String fileSufix;
+                if (mapPrefixSuffix != null) {
+                    filePrefix = mapPrefixSuffix.getPrefix();
+                    fileSufix = mapPrefixSuffix.getSufix();
+                } else {
+                    return null;
+                }
+                if (filePrefix != null && fileSufix != null) {
+                    nodeBuilder.append(filePrefix).append(".");
+                    nodeBuilder.append(hostName).append(".");
+                    nodeBuilder.append(fileSufix).append(".");
+                } else {
+                    nodeBuilder.append(graphite_prefix).append(".");
+                    nodeBuilder.append((cluster == null || ("".equals(cluster))) ? "" : cluster + ".");
+                    nodeBuilder.append(eName).append(".");
+                }
+            } else {
+                if("vm".equals(eName) || (eName != null && eName.contains("vm"))){
+                    return null;
+                } else {
+                    nodeBuilder.append(graphite_prefix).append(".");
+                    nodeBuilder.append((cluster == null || ("".equals(cluster) || ("null".equals(cluster)))) ? "" : cluster + ".");
+                    nodeBuilder.append(eName).append(".");
+                }
+            }
+        } else {
+            nodeBuilder.append(graphite_prefix).append(".");
+            nodeBuilder.append((cluster == null || ("".equals(cluster) || ("null".equals(cluster)))) ? "" : cluster + ".");
+            nodeBuilder.append(eName).append(".");
+        }
+        nodeBuilder.append(groupName).append(".");
+        nodeBuilder.append((instanceName == null || ("".equals(instanceName))) ? "" : instanceName + ".");
+        nodeBuilder.append(metricName).append("_");
+        if(place_rollup_in_the_end){
+            nodeBuilder.append(statType).append("_");
+            nodeBuilder.append(rollup);
+        } else {
+            nodeBuilder.append(rollup).append("_");
+            nodeBuilder.append(statType);
+        }
+        logger.debug((instanceName == null || ("".equals(instanceName))) ?
+                        "GP :" + graphite_prefix + " EN: " + eName + " CN: " + counterName + " ST: " + statType :
+                        "GP :" + graphite_prefix + " EN: " + eName + " GN :" + groupName + " IN :" + instanceName + " MN :" + metricName + " ST: " + statType + " RU: " + rollup
+        );
+
+        if (cluster == null || "".equals(cluster) || "null".equals(cluster)) {
+            logger.debug("The cluster is null - " + eName);
+            return null;
+        }
+        return nodeBuilder.toString();
+    }
 }

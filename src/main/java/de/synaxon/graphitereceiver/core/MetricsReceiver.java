@@ -7,10 +7,12 @@ import com.vmware.ee.statsfeeder.PerfMetricSet.PerfMetric;
 import com.vmware.ee.statsfeeder.StatsExecutionContextAware;
 import com.vmware.ee.statsfeeder.StatsFeederListener;
 import com.vmware.ee.statsfeeder.StatsListReceiver;
+import de.synaxon.graphitereceiver.domain.MapPrefixSuffix;
 import de.synaxon.graphitereceiver.utils.Utils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
@@ -46,6 +48,8 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
 
     private int disconnectCounter;
     private int disconnectAfter;
+    private boolean isHostMap;
+    private Map<String, MapPrefixSuffix> hostMap;
     private Map<String,String> clusterMap = new HashMap<String, String>();
 
 
@@ -85,8 +89,8 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
      *    }
      * </pre>
      *
-     * @param name
-     * @param properties
+     * @param name receiver name
+     * @param properties app properties
      */
     public MetricsReceiver(String name, Properties properties) {
         this. logger = LogFactory.getLog(MetricsReceiver.class);
@@ -99,7 +103,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
 
     /**
      *
-     * @return
+     * @return receive name
      */
     public String getName() {
         this.logger.debug("MetricsReceiver getName: " + this.name);
@@ -118,10 +122,8 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
     public void setExecutionContext(ExecutionContext context) {
         logger.debug("MetricsReceiver join in setExecutionContext.");
         logger.debug("Getting context and properties");
-
         this.context = context;
 
-        this.freq=context.getConfiguration().getFrequencyInSeconds();
         if(this.properties.getProperty("prefix") == null || this.properties.getProperty("prefix").isEmpty()) {
             this.properties.setProperty("prefix", "vmware");
         }
@@ -158,6 +160,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
             this.disconnectAfter = -1;
         }
 
+        this.freq=context.getConfiguration().getFrequencyInSeconds();
         try{
             this.cacheRefreshInterval = Integer.parseInt(this.properties.getProperty("cluster_map_refresh_timeout"));
             if(this.cacheRefreshInterval < 1){
@@ -170,6 +173,20 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
             logger.debug("cluster_map_refresh_timeout attribute is not set or not supported.");
             logger.debug("cluster_map_refresh_timeout is set to < 1 will not be supported: ");
             this.cacheRefreshInterval = -1;
+        }
+        if(this.properties.getProperty("use_alternate_vm_prefix_sufix") != null && !this.properties.getProperty("use_alternate_vm_prefix_sufix").isEmpty()) {
+            this.isHostMap = Boolean.valueOf(this.properties.getProperty("use_alternate_vm_prefix_sufix"));
+        }
+        if(this.isHostMap) {
+            String hostMapPath = this.properties.getProperty("alternate_vm_prefix_sufix_map_file");
+            if (hostMapPath != null && !hostMapPath.equals("")) {
+                try {
+                    MapperPrefixSuffix mapperPrefixSuffix = new MapperPrefixSuffix(hostMapPath);
+                    this.hostMap = mapperPrefixSuffix.getAllMapper();
+                } catch (FileNotFoundException e) {
+                    e.printStackTrace();
+                }
+            }
         }
     }
 
@@ -378,7 +395,6 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
 
             if (metricSet != null) {
                 //-- Samples come with the following date format
-                String node;
                 String cluster = null;
 
                 if((metricSet.getEntityName().contains("VirtualMachine") == true) || (metricSet.getEntityName().contains("HostSystem") == true)){
@@ -413,9 +429,11 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
 
                 String rollup;
 
+                String hostName = null;
                 if(use_entity_type_prefix) {
                     if(entityName.contains("[VirtualMachine]")) {
-                        eName = "vm."+morefRetriever.parseEntityName(entityName).replace('.', '_');
+                        hostName = morefRetriever.parseEntityName(entityName).replace('.', '_');
+                        eName="vm." + hostName;
                     }else if (entityName.contains("[HostSystem]")) {
                         //for ESX only hostname
                         if(!use_fqdn) {
@@ -431,14 +449,15 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
 
                 } else {
                     eName = morefRetriever.parseEntityName(entityName);
-
                     if(!use_fqdn && entityName.contains("[HostSystem]")){
                         eName = eName.split("[.]",2)[0];
                     }
                     eName = eName.replace('.', '_');
                 }
-                eName = eName.replace(' ','_').replace('-','_');
-                logger.debug("Container Name :" +morefRetriever.getContainerName(eName) + " Interval: "+Integer.toString(interval)+ " Frequency :"+Integer.toString(freq));
+                if(eName != null) {
+                    eName = eName.replace(' ', '_').replace('-', '_');
+                }
+                logger.debug("Container Name :" + morefRetriever.getContainerName(eName) + " Interval: "+Integer.toString(interval)+ " Frequency :"+Integer.toString(frequencyInSeconds));
 
                 /*
                     Finally node contains these fields (depending on properties)
@@ -449,32 +468,27 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                  */
                 //Get group name (xxxx) metric name (yyyy) and rollup (zzzz)
                 // from "xxxx.yyyyyy.xxxxx" on the metricName
-                cluster = cluster.replace(".", "_");
+                if(cluster != null) {
+                    cluster = cluster.replace(".", "_");
+                }
 
                 String[] counterInfo = Utils.splitCounterName(counterName);
                 String groupName = counterInfo[0];
                 String metricName = counterInfo[1];
                 rollup = counterInfo[2];
 
-                StringBuilder nodeBuilder = new StringBuilder();
-                nodeBuilder.append(this.properties.getProperty("prefix")).append(".");
-                nodeBuilder.append((cluster == null || ("".equals(cluster))) ? "" : cluster + ".");
-                nodeBuilder.append(eName).append(".");
-                nodeBuilder.append(groupName).append(".");
-                nodeBuilder.append((instanceName == null || ("".equals(instanceName))) ? "" : instanceName + ".");
-                nodeBuilder.append(metricName).append("_");
-                if(place_rollup_in_the_end){
-                    nodeBuilder.append(statType).append("_");
-                    nodeBuilder.append(rollup);
-                } else {
-                    nodeBuilder.append(rollup).append("_");
-                    nodeBuilder.append(statType);
-                }
-                logger.debug((instanceName == null || ("".equals(instanceName))) ?
-                                new StringBuilder("GP :").append(this.properties.getProperty("prefix")).append(" EN: ").append(eName).append(" CN: ").append(counterName).append(" ST: ").append(statType).toString():
-                                new StringBuilder("GP :").append(this.properties.getProperty("prefix")).append(" EN: ").append(eName).append(" GN :").append(groupName).append(" IN :").append(instanceName).append(" MN :").append(metricName).append(" ST: ").append(statType).append(" RU: ").append(rollup).toString()
-                );
-                node = nodeBuilder.toString();
+                Map<String,String> graphiteTree = new HashMap<String, String>();
+                graphiteTree.put("graphite_prefix", this.properties.getProperty("prefix"));
+                graphiteTree.put("cluster", cluster);
+                graphiteTree.put("eName", eName);
+                graphiteTree.put("groupName", groupName);
+                graphiteTree.put("instanceName", instanceName);
+                graphiteTree.put("metricName", metricName);
+                graphiteTree.put("statType", statType);
+                graphiteTree.put("rollup", rollup);
+                graphiteTree.put("counterName", counterName);
+                graphiteTree.put("hostName", hostName);
+                String node = Utils.getNode(graphiteTree, place_rollup_in_the_end, this.isHostMap, this.hostMap);
                 metricsCount += metricSet.size();
                 if(only_one_sample_x_period) {
                     logger.debug("one sample x period");
@@ -492,22 +506,26 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                     return;
                 }
                 */
-                    if(rollup.equals("average")) {
-                        sendMetricsAverage(node,metricSet,n);
-                    } else if(rollup.equals("latest")) {
-                        sendMetricsLatest(node,metricSet);
-                    } else if(rollup.equals("maximum")) {
-                        sendMetricsMaximum(node,metricSet);
-                    } else if(rollup.equals("minimum")) {
-                        sendMetricsMinimim(node,metricSet);
-                    } else if(rollup.equals("summation")) {
-                        sendMetricsSummation(node,metricSet);
-                    } else {
-                        logger.info("Not supported Rollup agration:"+rollup);
+                    if(node != null) {
+                        if (rollup.equals("average")) {
+                            sendMetricsAverage(node, metricSet, n);
+                        } else if (rollup.equals("latest")) {
+                            sendMetricsLatest(node, metricSet);
+                        } else if (rollup.equals("maximum")) {
+                            sendMetricsMaximum(node, metricSet);
+                        } else if (rollup.equals("minimum")) {
+                            sendMetricsMinimim(node, metricSet);
+                        } else if (rollup.equals("summation")) {
+                            sendMetricsSummation(node, metricSet);
+                        } else {
+                            logger.info("Not supported Rollup agration:" + rollup);
+                        }
                     }
                 } else {
-                    logger.debug("all samples");
-                    sendAllMetrics(node,metricSet);
+                    if(node != null) {
+                        logger.debug("all samples");
+                        sendAllMetrics(node, metricSet);
+                    }
                 }
             } else {
                 logger.debug("MetricsReceiver MetricSet is NULL");
@@ -539,6 +557,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
     @Override
     public void onStartRetrieval() {
         try {
+            this.refreshHostMapPeriod();
             logger.debug("onStartRetrieval - Graphite Host and Port: " + this.properties.getProperty("host") + "\t" + this.properties.getProperty("port"));
             this.disconnectCounter = 0;
 
@@ -562,6 +581,20 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
         } catch (IOException ex) {
             logger.error("Can't connect to graphite.", ex);
         }
+    }
+
+    public void refreshHostMapPeriod() {
+        String hostMapPath = this.properties.getProperty("alternate_vm_prefix_sufix_map_file");
+        if (hostMapPath != null && !hostMapPath.equals("")) {
+            try {
+                MapperPrefixSuffix mapperPrefixSuffix = new MapperPrefixSuffix(hostMapPath);
+                this.hostMap = mapperPrefixSuffix.getAllMapper();
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
+            }
+        }
+        //Next PR
+        //this.hostMapPeriod = 0;
     }
 
     /**

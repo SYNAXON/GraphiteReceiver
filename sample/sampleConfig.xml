@@ -74,7 +74,14 @@
                     <name>place_rollup_in_the_end</name>
                     <value>true</value>
                 </property>
-
+                <property>
+                    <name>use_alternate_vm_prefix_sufix</name>
+                    <value>true</value>
+                </property>
+                <property>
+                    <name>alternate_vm_prefix_sufix_map_file</name>
+                    <value>PATH/hostname.map</value>
+                </property>
                 <!--
                     if "use_entity_type_prefix" is set to true the receiver will prepend the type
                     [HostSystem]    => "esx".<hostname>
