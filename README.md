@@ -9,7 +9,7 @@ A detailed config can be found in the directory sample.
 ```
 <receiver>
     <name>graphite</name>
-    <class>de.synaxon.graphitereceiver.MetricsReceiver</class>
+    <class>de.synaxon.graphitereceiver.core.MetricsReceiver</class>
     <properties>
         <!--  Set the file name. Files will be rolled over on the hour -->
         <property>
