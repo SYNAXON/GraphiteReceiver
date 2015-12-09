@@ -44,6 +44,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
     private boolean use_entity_type_prefix;
     private boolean only_one_sample_x_period;
     private boolean place_rollup_in_the_end;
+    private boolean instanceMetrics;
     private int disconnectCounter;
     private int disconnectAfter;
     private boolean isHostMap;
@@ -128,6 +129,12 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
 
         if(this.props.getProperty("place_rollup_in_the_end") != null && !this.props.getProperty("place_rollup_in_the_end").isEmpty()) {
             this.place_rollup_in_the_end = Boolean.valueOf(this.props.getProperty("place_rollup_in_the_end"));
+        }
+
+        if(this.props.getProperty("disable_instance_metrics") != null && !this.props.getProperty("disable_instance_metrics").isEmpty()) {
+            this.instanceMetrics = Boolean.valueOf(this.props.getProperty("disable_instance_metrics"));
+        } else {
+            this.instanceMetrics = false;
         }
 
         try{
@@ -350,21 +357,13 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                 String node = Utils.getNode(graphiteTree, place_rollup_in_the_end, this.isHostMap, this.hostMap);
 
                 metricsCount += metricSet.size();
-                if(only_one_sample_x_period) {
-                    logger.debug("one sample x period");
-                    //check if metricSet has the expected number of metrics
-                    if(node != null) {
-                        int itv=metricSet.getInterval();
-                        if(frequencyInSeconds % itv != 0) {
-                            logger.warn("frequency " + frequencyInSeconds + " is not multiple of interval: " + itv + " at metric : " + node);
-                            return;
+                if(node != null) {
+                    if(this.instanceMetrics) {
+                        if(instanceName == null || instanceName.isEmpty()) {
+                            this.sendMetric(metricSet, node, rollup);
                         }
-                        this.sendMetric(node, metricSet.getMetrics(), rollup, frequencyInSeconds / itv);
-                    }
-                } else {
-                    if(node != null) {
-                        logger.debug("all samples");
-                        sendAllMetrics(node, metricSet);
+                    } else {
+                        this.sendMetric(metricSet, node, rollup);
                     }
                 }
             } else {
@@ -387,6 +386,23 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                     this.props.getProperty("host") + "\t" +
                     Integer.parseInt(this.props.getProperty("port", "2003")));
             System.exit(-1);
+        }
+    }
+
+    private void sendMetric(PerfMetricSet metricSet, String node, String rollup){
+        Integer frequencyInSeconds = this.context.getConfiguration().getFrequencyInSeconds();
+        if (only_one_sample_x_period) {
+            logger.debug("one sample x period");
+            int itv = metricSet.getInterval();
+            if (frequencyInSeconds % itv != 0) {
+                logger.warn("frequency " + frequencyInSeconds + " is not multiple of interval: " + itv + " at metric : " + node);
+                return;
+            }
+            this.sendMetric(node, metricSet.getMetrics(), rollup, frequencyInSeconds / itv);
+
+        } else {
+            logger.debug("all samples");
+            sendAllMetrics(node, metricSet);
         }
     }
 
