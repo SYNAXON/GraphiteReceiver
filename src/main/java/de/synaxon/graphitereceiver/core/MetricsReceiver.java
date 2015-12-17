@@ -33,6 +33,7 @@ import java.util.TimeZone;
  */
 public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, StatsExecutionContextAware {
 
+    private final DateFormat SDF = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
     private Log logger;
     private boolean debugLogLevel;
     private String name;
@@ -90,6 +91,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
         this.props = props;
         this.disconnectCounter = 0;
         logger.debug("MetricsReceiver Constructor.");
+        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
     }
 
     /**
@@ -354,12 +356,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                     logger.debug("one sample x period");
                     //check if metricSet has the expected number of metrics
                     if(node != null) {
-                        int itv=metricSet.getInterval();
-                        if(frequencyInSeconds % itv != 0) {
-                            logger.warn("frequency " + frequencyInSeconds + " is not multiple of interval: " + itv + " at metric : " + node);
-                            return;
-                        }
-                        this.sendMetric(node, metricSet.getMetrics(), rollup, frequencyInSeconds / itv);
+                        this.sendMetric(node, metricSet.getMetrics(), rollup);
                     }
                 } else {
                     if(node != null) {
@@ -390,14 +387,11 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
         }
     }
 
-    private void sendMetric(String node,Iterator<PerfMetric> metrics, String rollup, int n){
-        final DateFormat SDF = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
+    private void sendMetric(String node,Iterator<PerfMetric> metrics, String rollup){
         try {
-            PerfMetric sample = metrics.next();
-            double value = 0;
+            String value = "";
             if (rollup.equals("average")) {
-                value = Calculate.average(metrics, n);
+                value = Calculate.average(metrics);
             } else if (rollup.equals("latest")) {
                 value = Calculate.latest(metrics);
             } else if (rollup.equals("maximum")) {
@@ -409,15 +403,13 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
             } else {
                 logger.info("Not supported Rollup agration:" + rollup);
             }
-
             if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
                 logger.debug("sendMetric - PerfMetric Counter Value: " + this.disconnectCounter);
                 this.resetGraphiteConnection();
             }
-            out.printf("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000);
-
+            out.printf("%s %s%n", node, value);
             if(this.debugLogLevel){
-                String str = String.format("%s %f %s%n", node, value, SDF.parse(sample.getTimestamp()).getTime() / 1000);
+                String str = String.format("%s %s", node, value);
                 logger.debug("Graphite Output Summation: " + str);
             }
         } catch (ParseException t) {
@@ -426,9 +418,6 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
     }
 
     private void sendAllMetrics(String node,PerfMetricSet metricSet){
-        final DateFormat SDF = new SimpleDateFormat(
-                "yyyy-MM-dd'T'HH:mm:ss'Z'");
-        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
         try {
             Iterator<PerfMetric> metrics = metricSet.getMetrics();
             while (metrics.hasNext()) {
