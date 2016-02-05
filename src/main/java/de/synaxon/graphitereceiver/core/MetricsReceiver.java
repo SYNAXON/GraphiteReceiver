@@ -469,7 +469,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
     }
 
     public String scalePercent(String node){
-        String[] split = node.split("");
+        String[] split = node.split(" ");
         double scale = Double.valueOf(split[0]) / 100;
         return scale + " " + split[1];
     }
