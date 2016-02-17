@@ -76,7 +76,7 @@
                 </property>
                 <property>
                     <name>use_alternate_vm_prefix_sufix</name>
-                    <value>true</value>
+                    <value>false</value>
                 </property>
                 <property>
                     <name>alternate_vm_prefix_sufix_map_file</name>
