@@ -76,7 +76,7 @@
                 </property>
                 <property>
                     <name>use_alternate_vm_prefix_sufix</name>
-                    <value>true</value>
+                    <value>false</value>
                 </property>
                 <property>
                     <name>alternate_vm_prefix_sufix_map_file</name>
@@ -85,6 +85,18 @@
                 <property>
                     <name>alternate_vm_prefix_sufix_timeout</name>
                     <value>3600</value>
+                </property>
+                <property>
+                    <name>disable_instance_metrics</name>
+                    <value>true</value>
+                </property>
+                <property>
+                    <name>names_transformation_rules</name>
+                    <value>true</value>
+                </property>
+                <property>
+                    <name>names_transformation_rules_path</name>
+                    <value>PATH/rules.xml</value>
                 </property>
                 <!--
                     if "use_entity_type_prefix" is set to true the receiver will prepend the type

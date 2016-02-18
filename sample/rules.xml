@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Rules>
+    <Rule target="instanceName">
+        <replace searchValue="." newValue="_"/>
+        <replace searchValue="-" newValue="_"/>
+        <replace searchValue="/" newValue="_"/>
+        <replace searchValue=" " newValue="_"/>
+    </Rule>
+    <Rule target="cluster">
+        <replace searchValue="." newValue="_"/>
+    </Rule>
+    <Rule target="eName">
+        <replace searchValue=" " newValue="_"/>
+        <replace searchValue="-" newValue="_"/>
+        <replace searchValue="." newValue="_"/>
+        <UpperCase>true</UpperCase>
+    </Rule>
+    <!--<Rule target="eName">-->
+        <!--<Match>swcasp503</Match>-->
+        <!--<Stop>true</Stop>-->
+    <!--</Rule>-->
+    <Rule target="eName">
+        <Rename oldName="swcasp503" newName="newName"/>
+    </Rule>
+    <Rule target="cluster">
+        <replace searchValue="." newValue="_"/>
+    </Rule>
+    <Rule target="hostName">
+        <replace searchValue=" " newValue="_"/>
+        <replace searchValue="." newValue="_"/>
+    </Rule>
+</Rules>
+<!--replace, stop, rename-->
+<!--LowerCase-->
+<!--UpperCase-->
