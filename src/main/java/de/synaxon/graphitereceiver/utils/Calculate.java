@@ -77,11 +77,17 @@ public class Calculate {
         SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
         double value = 0;
         String timestamp = "";
+
+        int count = 0;
+        String values = "";
+
         while(metrics.hasNext()){
             PerfMetric perfMetric = metrics.next();
             double next = Double.valueOf(perfMetric.getValue());
             timestamp = perfMetric.getTimestamp();
             value += next;
+            count++;
+            values = values + " " + value;
         }
         return String.valueOf(value) + " " + (SDF.parse(timestamp).getTime() / 1000);
     }

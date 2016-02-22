@@ -7,8 +7,11 @@ import com.vmware.ee.statsfeeder.PerfMetricSet.PerfMetric;
 import com.vmware.ee.statsfeeder.StatsExecutionContextAware;
 import com.vmware.ee.statsfeeder.StatsFeederListener;
 import com.vmware.ee.statsfeeder.StatsListReceiver;
+import de.synaxon.graphitereceiver.core.xml.ReadRules;
 import de.synaxon.graphitereceiver.domain.MapPrefixSuffix;
+import de.synaxon.graphitereceiver.domain.Rule;
 import de.synaxon.graphitereceiver.utils.Calculate;
+import de.synaxon.graphitereceiver.utils.RuleUtils;
 import de.synaxon.graphitereceiver.utils.Utils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -23,6 +26,7 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.TimeZone;
@@ -33,7 +37,6 @@ import java.util.TimeZone;
  */
 public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, StatsExecutionContextAware {
 
-    private final DateFormat SDF = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
     private Log logger;
     private boolean debugLogLevel;
     private String name;
@@ -45,6 +48,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
     private boolean use_entity_type_prefix;
     private boolean only_one_sample_x_period;
     private boolean place_rollup_in_the_end;
+    private boolean instanceMetrics;
     private int disconnectCounter;
     private int disconnectAfter;
     private boolean isHostMap;
@@ -58,6 +62,8 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
     private int clusterPeriod;
     private int refreshHostMapPeriod;
     private int hostMapPeriod;
+    private Map<String, List<Rule>> rules;
+
 
     /**
      * This constructor will be called by StatsFeeder to load this receiver. The props object passed is built
@@ -91,7 +97,6 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
         this.props = props;
         this.disconnectCounter = 0;
         logger.debug("MetricsReceiver Constructor.");
-        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
     }
 
     /**
@@ -130,6 +135,28 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
 
         if(this.props.getProperty("place_rollup_in_the_end") != null && !this.props.getProperty("place_rollup_in_the_end").isEmpty()) {
             this.place_rollup_in_the_end = Boolean.valueOf(this.props.getProperty("place_rollup_in_the_end"));
+        }
+
+        if(this.props.getProperty("disable_instance_metrics") != null && !this.props.getProperty("disable_instance_metrics").isEmpty()) {
+            this.instanceMetrics = Boolean.valueOf(this.props.getProperty("disable_instance_metrics"));
+        } else {
+            this.instanceMetrics = false;
+        }
+
+        boolean isRules = false;
+        if(this.props.getProperty("names_transformation_rules") != null && !this.props.getProperty("names_transformation_rules").isEmpty()) {
+            isRules = Boolean.valueOf(this.props.getProperty("names_transformation_rules"));
+        }
+
+        if(isRules){
+            String path = null;
+            if(this.props.getProperty("names_transformation_rules_path") != null && !this.props.getProperty("names_transformation_rules_path").isEmpty()) {
+                path = this.props.getProperty("names_transformation_rules_path");
+            }
+            if(path != null) {
+                ReadRules readRules = new ReadRules(path);
+                this.rules = readRules.getRules();
+            }
         }
 
         try{
@@ -252,36 +279,30 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
         Integer frequencyInSeconds = this.context.getConfiguration().getFrequencyInSeconds();
 
         try {
+            String entityNameParsed = "";
             logger.debug("MetricsReceiver in receiveStats");
             if (metricSet != null) {
-                //-- Samples come with the following date format
                 String cluster = null;
 
                 if((metricSet.getEntityName().contains("VirtualMachine")) || (metricSet.getEntityName().contains("HostSystem"))){
 
-                    String myEntityName = morefRetriever.parseEntityName(metricSet.getEntityName());
+                    entityNameParsed = morefRetriever.parseEntityName(metricSet.getEntityName());
 
-                    if(myEntityName.equals("")){
+                    if(entityNameParsed.equals("")){
                         logger.warn("Received Invalid Managed Entity. Failed to Continue.");
                         return;
                     }
-                    myEntityName = myEntityName.replace(" ", "_");
-                    cluster = String.valueOf(clusterMap.get(myEntityName));
+                    cluster = String.valueOf(clusterMap.get(entityNameParsed.replace(" ", "_")));
                     if(cluster == null || cluster.equals("")){
-                        logger.warn("Cluster Not Found for Entity " + myEntityName);
+                        logger.warn("Cluster Not Found for Entity " + entityNameParsed.replace(" ", "_"));
                         return;
                     }
-                    logger.debug("Cluster and Entity: " + cluster + " : " + myEntityName);
+                    logger.debug("Cluster and Entity: " + cluster + " : " + entityNameParsed.replace(" ", "_"));
                 }
 
-                String eName=null;
-                String counterName=metricSet.getCounterName();
-                //Get Instance Name
-                String instanceName=metricSet.getInstanceId()
-                        .replace('.','_')
-                        .replace('-','_')
-                        .replace('/','.')
-                        .replace(' ','_');
+                String instanceName = (this.rules.get("instanceName") != null)? RuleUtils.applyRules(metricSet.getInstanceId(),this.rules.get("instanceName")):metricSet.getInstanceId();
+
+
                 String statType=metricSet.getStatType();
 
 
@@ -289,34 +310,11 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
 
                 String rollup;
                 String hostName = null;
-                if(use_entity_type_prefix) {
-                    if(entityName.contains("[VirtualMachine]")) {
-                        hostName = morefRetriever.parseEntityName(entityName).replace('.', '_');
-                        eName="vm." + hostName;
-                    }else if (entityName.contains("[HostSystem]")) {
-                        //for ESX only hostname
-                        if(!use_fqdn) {
-                            eName="esx." + morefRetriever.parseEntityName(entityName).split("[.]",2)[0];
-                        }else {
-                            eName="esx." + morefRetriever.parseEntityName(entityName).replace('.', '_');
-                        }
-                    }else if (entityName.contains("[Datastore]")) {
-                        eName="dts." + morefRetriever.parseEntityName(entityName).replace('.', '_');
-                    }else if (entityName.contains("[ResourcePool]")) {
-                        eName="rp." + morefRetriever.parseEntityName(entityName).replace('.', '_');
-                    }
-
-                } else {
-                    eName = morefRetriever.parseEntityName(entityName);
-
-                    if(!use_fqdn && entityName.contains("[HostSystem]")){
-                        eName=eName.split("[.]",2)[0];
-                    }
-                    eName=eName.replace('.', '_');
+                if(entityName.contains("[VirtualMachine]")) {
+                    hostName = (this.rules.get("hostName") != null)?RuleUtils.applyRules(entityNameParsed,this.rules.get("hostName")):entityNameParsed;
                 }
-                if(eName != null) {
-                    eName = eName.replace(' ', '_').replace('-', '_');
-                }
+
+                String eName = Utils.getEName(this.use_entity_type_prefix, this.use_fqdn, entityName, entityNameParsed, this.rules.get("eName"));
                 logger.debug("Container Name :" + morefRetriever.getContainerName(eName) + " Interval: "+Integer.toString(interval)+ " Frequency :"+Integer.toString(frequencyInSeconds));
 
                 /*
@@ -330,38 +328,37 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                 //Get group name (xxxx) metric name (yyyy) and rollup (zzzz)
                 // from "xxxx.yyyyyy.xxxxx" on the metricName
                 if(cluster != null) {
-                    cluster = cluster.replace(".", "_");
+                    cluster = (this.rules.get("cluster") != null)?RuleUtils.applyRules(cluster,this.rules.get("cluster")):cluster;
+
                 }
 
-                String[] counterInfo = Utils.splitCounterName(counterName);
+                String[] counterInfo = Utils.splitCounterName(metricSet.getCounterName());
                 String groupName = counterInfo[0];
                 String metricName = counterInfo[1];
                 rollup = counterInfo[2];
 
                 Map<String,String> graphiteTree = new HashMap<String, String>();
                 graphiteTree.put("graphite_prefix", this.props.getProperty("prefix"));
-                graphiteTree.put("cluster", cluster);
-                graphiteTree.put("eName", eName);
+                graphiteTree.put("cluster", cluster); //
+                graphiteTree.put("eName", eName); //
                 graphiteTree.put("groupName", groupName);
-                graphiteTree.put("instanceName", instanceName);
+                graphiteTree.put("instanceName", instanceName); //
                 graphiteTree.put("metricName", metricName);
                 graphiteTree.put("statType", statType);
                 graphiteTree.put("rollup", rollup);
-                graphiteTree.put("counterName", counterName);
-                graphiteTree.put("hostName", hostName);
+                graphiteTree.put("counterName", metricSet.getCounterName());
+                graphiteTree.put("hostName", hostName); //
+
                 String node = Utils.getNode(graphiteTree, place_rollup_in_the_end, this.isHostMap, this.hostMap);
 
                 metricsCount += metricSet.size();
-                if(only_one_sample_x_period) {
-                    logger.debug("one sample x period");
-                    //check if metricSet has the expected number of metrics
-                    if(node != null) {
-                        this.sendMetric(node, metricSet.getMetrics(), rollup);
-                    }
-                } else {
-                    if(node != null) {
-                        logger.debug("all samples");
-                        sendAllMetrics(node, metricSet);
+                if(node != null) {
+                    if(this.instanceMetrics) {
+                        if(instanceName == null || instanceName.isEmpty()) {
+                            this.sendMetric(metricSet, node, rollup);
+                        }
+                    } else {
+                        this.sendMetric(metricSet, node, rollup);
                     }
                 }
             } else {
@@ -387,6 +384,23 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
         }
     }
 
+    private void sendMetric(PerfMetricSet metricSet, String node, String rollup){
+        Integer frequencyInSeconds = this.context.getConfiguration().getFrequencyInSeconds();
+        if (only_one_sample_x_period) {
+            logger.debug("one sample x period");
+            int itv = metricSet.getInterval();
+            if (frequencyInSeconds % itv != 0) {
+                logger.warn("frequency " + frequencyInSeconds + " is not multiple of interval: " + itv + " at metric : " + node);
+                return;
+            }
+            this.sendMetric(node, metricSet.getMetrics(), rollup);
+
+        } else {
+            logger.debug("all samples");
+            sendAllMetrics(node, metricSet);
+        }
+    }
+
     private void sendMetric(String node,Iterator<PerfMetric> metrics, String rollup){
         try {
             String value = "";
@@ -399,6 +413,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
             } else if (rollup.equals("minimum")) {
                 value = Calculate.minimun(metrics);
             } else if (rollup.equals("summation")) {
+
                 value = Calculate.sumation(metrics);
             } else {
                 logger.info("Not supported Rollup agration:" + rollup);
@@ -406,6 +421,9 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
             if((this.disconnectAfter > 0) && (++this.disconnectCounter >= this.disconnectAfter)){
                 logger.debug("sendMetric - PerfMetric Counter Value: " + this.disconnectCounter);
                 this.resetGraphiteConnection();
+            }
+            if(node != null && node.contains("_percent_")) {
+                value = scalePercent(value);
             }
             out.printf("%s %s%n", node, value);
             if(this.debugLogLevel){
@@ -418,6 +436,9 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
     }
 
     private void sendAllMetrics(String node,PerfMetricSet metricSet){
+        final DateFormat SDF = new SimpleDateFormat(
+                "yyyy-MM-dd'T'HH:mm:ss'Z'");
+        SDF.setTimeZone(TimeZone.getTimeZone("UTC"));
         try {
             Iterator<PerfMetric> metrics = metricSet.getMetrics();
             while (metrics.hasNext()) {
@@ -445,5 +466,11 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
     public String getName() {
         this.logger.debug("MetricsReceiver getName: " + this.name);
         return name;
+    }
+
+    public String scalePercent(String node){
+        String[] split = node.split(" ");
+        double scale = Double.valueOf(split[0]) / 100;
+        return scale + " " + split[1];
     }
 }

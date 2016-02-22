@@ -1,4 +1,4 @@
-package de.synaxon.graphitereceiver.core;
+package de.synaxon.graphitereceiver.utils;
 
 import de.synaxon.graphitereceiver.domain.MapPrefixSuffix;
 import org.apache.commons.logging.Log;
@@ -18,6 +18,7 @@ public class MapperPrefixSuffix {
 
     public MapperPrefixSuffix(String path) throws FileNotFoundException {
         Log logger = LogFactory.getLog(MapperPrefixSuffix.class);
+        logger.warn("hostname map no exist or is empty");
         this.hostnameMap = new File(path);
         if(this.hostnameMap.exists()) {
             if(this.hostnameMap.length() == 0) {
@@ -39,7 +40,7 @@ public class MapperPrefixSuffix {
                 if(!line.startsWith("#")) {
                     String[] lineFound = line.split(separator);
                     MapPrefixSuffix mapPrefixSuffix = new MapPrefixSuffix(lineFound[1], lineFound[2]);
-                    hostMap.put(lineFound[0].toLowerCase(), mapPrefixSuffix);
+                    hostMap.put(lineFound[0], mapPrefixSuffix);
                 }
             }
         } catch (IOException e) {

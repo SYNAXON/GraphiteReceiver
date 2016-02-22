@@ -14,6 +14,7 @@ import com.vmware.vim25.RetrieveResult;
 import com.vmware.vim25.RuntimeFaultFaultMsg;
 import com.vmware.vim25.TraversalSpec;
 import de.synaxon.graphitereceiver.domain.MapPrefixSuffix;
+import de.synaxon.graphitereceiver.domain.Rule;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -161,24 +162,22 @@ public class Utils {
         String statType = graphiteTree.get("statType");
         String rollup = graphiteTree.get("rollup");
         String counterName = graphiteTree.get("counterName");
-
         String hostName = graphiteTree.get("hostName");
 
         StringBuilder nodeBuilder = new StringBuilder();
+
         if ("null".equals(cluster)) {
             logger.warn("The cluster is null (String)");
         }
         if(isHostMap) {
             if ((hostMap.size() > 0) && (hostName != null && !hostName.equals(""))) {
-                MapPrefixSuffix mapPrefixSuffix = hostMap.get(hostName);
-
+                MapPrefixSuffix mapPrefixSuffix = hostMap.get(hostName.toLowerCase());
                 String filePrefix;
                 String fileSufix;
                 if (mapPrefixSuffix != null) {
                     filePrefix = mapPrefixSuffix.getPrefix();
                     fileSufix = mapPrefixSuffix.getSufix();
                 } else {
-
                     return null;
                 }
                 if (filePrefix != null && fileSufix != null) {
@@ -226,6 +225,40 @@ public class Utils {
         return nodeBuilder.toString();
     }
 
+    public static String getEName(boolean entityPrefix, boolean useFqdn, String entityName, String parseEntityName, List<Rule> rules ){
+        String prefix = "";
+        String sufix = "";
+        if(entityPrefix) {
+            if(entityName.contains("[VirtualMachine]")) {
+                prefix = "vm.";
+            }else if (entityName.contains("[HostSystem]")) {
+                prefix = "esx.";
+            }else if (entityName.contains("[Datastore]")) {
+                prefix="dts.";
+            }else if (entityName.contains("[ResourcePool]")) {
+                prefix="rp.";
+            }
+        }
+        if(!useFqdn && entityName.contains("[HostSystem]")){
+            sufix = parseEntityName.split("[.]", 2)[0];
+        } else {
+            sufix = parseEntityName.replace('.', '_').replace(' ', '_').replace('-', '_');
+        }
+
+        if(rules != null && rules.size() > 0){
+            sufix = RuleUtils.applyRules(sufix, rules);
+        }
+
+        return prefix + sufix;
+    }
+    public static boolean isUpper(String s) {
+        for(char c : s.toCharArray()) {
+            if(! Character.isUpperCase(c))
+                return false;
+        }
+        return true;
+    }
+
     public static int calculateIteration(long frequencyInSeconds, String refreshInterval, String type){
 
         try {
@@ -247,4 +280,6 @@ public class Utils {
             return 1;
         }
     }
+
 }
+
