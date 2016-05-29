@@ -49,6 +49,7 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
     private boolean only_one_sample_x_period;
     private boolean place_rollup_in_the_end;
     private boolean instanceMetrics;
+    private boolean globalInstance;
     private int disconnectCounter;
     private int disconnectAfter;
     private boolean isHostMap;
@@ -141,6 +142,12 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
             this.instanceMetrics = Boolean.valueOf(this.props.getProperty("disable_instance_metrics"));
         } else {
             this.instanceMetrics = false;
+        }
+        
+        if(this.props.getProperty("use_global_instance") != null && !this.props.getProperty("use_global_instance").isEmpty()) {
+            this.globalInstance = Boolean.valueOf(this.props.getProperty("use_global_instance"));
+        } else {
+            this.globalInstance = false;
         }
 
         boolean isRules = false;
@@ -301,7 +308,11 @@ public class MetricsReceiver implements StatsListReceiver, StatsFeederListener, 
                 }
 
                 String instanceName = (this.rules.get("instanceName") != null)? RuleUtils.applyRules(metricSet.getInstanceId(),this.rules.get("instanceName")):metricSet.getInstanceId();
-
+                
+                if( ( this.globalInstance == true ) && ( instanceName == null || instanceName.isEmpty() ) )
+                {
+                        instanceName = "global";
+                }
 
                 String statType=metricSet.getStatType();
 
