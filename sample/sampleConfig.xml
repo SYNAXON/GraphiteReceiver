@@ -91,6 +91,10 @@
                     <value>true</value>
                 </property>
                 <property>
+                    <name>use_global_instance</name>
+                    <value>true</value>
+                </property>
+                <property>
                     <name>names_transformation_rules</name>
                     <value>true</value>
                 </property>
